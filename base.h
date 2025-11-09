@@ -87,7 +87,7 @@ typedef u32 b32;
 #endif
 
 #ifndef assert
-#ifdef MODE_RELEASE
+#ifndef MODE_RELEASE
 #define assert_msg(cond, ...) {\
     if (!(cond)) { \
         handle_assertion( \
