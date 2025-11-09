@@ -56,8 +56,7 @@ int main(void)
 
     String jdk_path = {0};
     if (!string_is_empty(version)) {
-        String prefix = string_lit("jdk-");
-        String jdk_target = string_concat(&arena, prefix, version);
+        String jdk_target = string_fmt(&arena, "jdk-{}", version);
         jdk_path = string_list_find_first_match(&path_list, jdk_target);
         if (!string_is_empty(jdk_path)) {
             String jdk_key = string_lit("JAVA_HOME");

@@ -206,7 +206,6 @@ internal String string_trim_leading(String s);
 internal b32 string_starts_with(String a, String b);
 internal b32 string_contains(String haystack, String needle);
 internal String string_keep_number(String s);
-internal String string_concat(Arena *arena, String a, String b);
 internal String string_fmt(Arena *arena, const char *fmt, ...);
 internal String string_fmt_va(Arena *arena, const char *fmt, va_list va);
 internal String string_skip_first_match(String s, String target);
@@ -566,16 +565,6 @@ inline String string_keep_number(String s)
 
     s.len = i;
     return s;
-}
-
-inline String string_concat(Arena *arena, String a, String b)
-{
-    usize len = a.len + b.len;
-    u8 *buf = arena_alloc(arena, len + 1);
-    mem_copy(buf, a.str, a.len);
-    mem_copy(&buf[a.len], b.str, b.len);
-
-    return string_create(buf, len);
 }
 
 inline String string_fmt(Arena *arena, const char *fmt, ...)
