@@ -16,7 +16,7 @@
 #endif
 
 #ifndef DEFAULT_ALIGN
-#define DEFAULT_ALIGN (2 * sizeof(void*))
+#define DEFAULT_ALIGN (uptr)(2 * sizeof(void*))
 #endif
 
 #ifdef _WIN32
@@ -74,6 +74,10 @@ typedef u32 b32;
 #endif // OS_WINDOWS
 #endif
 
+#ifndef noop
+#define noop() ((void)0)
+#endif
+
 #ifndef debug_trap
 #ifdef _MSC_VER
 #if _MSC_VER < 1300
@@ -86,15 +90,19 @@ typedef u32 b32;
 #endif // _MSC_VER
 #endif
 
-#ifndef assert
+#ifndef stringify
+#define stringify(x) #x
+#endif // stringify
+
+#ifndef assert_msg
 #ifndef MODE_RELEASE
 #define assert_msg(cond, ...) {\
     if (!(cond)) { \
-        handle_assertion( \
-            "Assertion failed", \
-            #cond, \
+        assert_handle( \
+            "assertion failed", \
+            stringify(cond), \
             __FILE__, \
-            __LINE__, \
+            stringify(__LINE__), \
             __VA_ARGS__ \
         ); \
         debug_trap(); \
@@ -175,8 +183,9 @@ readonly global String __log_level_to_string[] = {
     [LOG_INFO] = string_lit("INFO"),
 };
 
-internal b32 is_power_of_two(usize value);
-internal usize align_forward(usize value, usize align);
+internal b32 is_power_of_two(uptr value);
+internal usize align_forward_size(usize value, usize align);
+internal uptr align_forward(uptr value, uptr align);
 internal usize os_get_page_size(void);
 internal void *os_mem_reserve(void *addr, usize size);
 internal void *os_mem_commit(void *addr, usize size);
@@ -219,24 +228,37 @@ internal void string_list_push_back(Arena *arena, StringList *list, String s);
 internal String string_list_find_first_match(StringList *list, String needle);
 internal String string_list_flatten(Arena *arena, StringList *list);
 
-internal void log(File file, String msg);
-internal void log_fmt(Arena *arena, LogLevel level, const char *fmt, ...);
-internal void log_fmt_va(Arena *arena, LogLevel level, const char *fmt, va_list va);
+internal void assert_handle(
+    const char *_prefix,
+    const char *_cond,
+    const char *_file,
+    const char *_line,
+    const char *_msg,
+    ...
+);
+
+internal void log_fmt(LogLevel level, const char *fmt, ...);
+internal void log_fmt_va(LogLevel level, const char *fmt, va_list va);
 
 /******************************
  * NOTE(cya): implementations *
  ******************************/
 
-b32 is_power_of_two(usize value)
+b32 is_power_of_two(uptr value)
 {
     return (value & (value - 1)) == 0;
 }
 
-usize align_forward(usize value, usize align)
+inline usize align_forward_size(usize value, usize align)
 {
-    assert(is_power_of_two(value));
+    return align_forward((uptr)value, (uptr)align);
+}
 
-    usize modulo = value & (align - 1);
+uptr align_forward(uptr value, uptr align)
+{
+    assert(is_power_of_two(align));
+
+    uptr modulo = value & (align - 1);
     return modulo == 0 ? value : value + align - modulo;
 }
 
@@ -423,8 +445,8 @@ inline b32 os_spawn_process(Arena *arena, String args)
 Arena arena_init(usize reserve, usize commit)
 {
     usize page_size = os_get_page_size();
-    usize reserved = align_forward(reserve, page_size);
-    usize committed = align_forward(commit, page_size);
+    usize reserved = align_forward_size(reserve, page_size);
+    usize committed = align_forward_size(commit, page_size);
     void *memory = os_mem_reserve(NULL, reserved);
     if (memory == NULL) {
         // TODO(cya): error handling?
@@ -444,26 +466,28 @@ Arena arena_init(usize reserve, usize commit)
 
 void *arena_alloc(Arena *arena, usize size)
 {
-    usize cur_offset = align_forward(arena->offset, DEFAULT_ALIGN);
-    usize remaining = arena->reserved - cur_offset;
-    if (remaining < size) {
-        return NULL;
-    }
-
-    usize new_offset = cur_offset + size;
-    usize committed = arena->committed;
     uptr memory = (uptr)arena->memory;
-    void *start_addr = (void*)(memory + (uptr)cur_offset);
-    if (new_offset > committed) {
-        // TODO(cya): can we really be sure this will stay in-bounds?
-        usize commit = align_forward(size, arena->block_size);
-        void *commit_addr = (void*)(memory + committed);
-        os_mem_commit(commit_addr, commit);
-        arena->committed += commit;
+    uptr cur_addr = memory + (uptr)arena->offset;
+    uptr base_addr = align_forward(cur_addr, DEFAULT_ALIGN);
+    usize base_offset = (usize)(base_addr - memory);
+    if (base_addr > memory + (uptr)arena->reserved) {
+        // NOTE(cya): scratch behavior
+        base_addr = align_forward(memory, DEFAULT_ALIGN);
+        base_offset = (usize)(base_addr - memory);
+    } else {
+        usize committed = arena->committed;
+        if (base_offset > committed) {
+            // TODO(cya): can we really be sure this will stay in-bounds?
+            usize commit = align_forward(size, arena->block_size);
+            void *commit_addr = (void*)(memory + (uptr)committed);
+            os_mem_commit(commit_addr, commit);
+            arena->committed += commit;
+        }
     }
 
+    usize new_offset = base_offset + size;
     arena->offset = new_offset;
-    return start_addr;
+    return (void*)base_addr;
 }
 
 // NOTE(cya): ASCII only
@@ -579,8 +603,8 @@ inline String string_fmt(Arena *arena, const char *fmt, ...)
 inline String string_fmt_va(Arena *arena, const char *fmt, va_list va)
 {
     StringList parts = {0};
-    usize cur = 0;
-    for (usize i = 0; fmt[i] != '\0'; i++) {
+    usize cur = 0, i = 0;
+    for (; fmt[i] != '\0'; i++) {
         if (fmt[i] == '{' && fmt[i + 1] == '}') {
             usize len = i - cur;
             string_list_push_back(arena, &parts, string_create(&fmt[cur], len));
@@ -591,6 +615,7 @@ inline String string_fmt_va(Arena *arena, const char *fmt, va_list va)
         }
     }
 
+    string_list_push_back(arena, &parts, string_create(&fmt[cur], i - cur));
     return string_list_flatten(arena, &parts);
 }
 
@@ -632,6 +657,7 @@ inline String string_path_pop(String path)
         char c = path.str[i];
         if (c == OS_PATH_SEPARATOR) {
             result = string_create(path.str, i);
+            break;
         }
     }
 
@@ -717,21 +743,50 @@ inline String string_list_flatten(Arena *arena, StringList *list)
     return string_create(buf, len);
 }
 
-inline void log(File file, String msg)
-{
-    os_file_write_string(file, msg);
-    os_file_write_string(file, string_lit(OS_LINE_SEPARATOR));
+global u8 __log_buf[0x1000];
+global Arena __log_arena = {
+    .reserved = array_len(__log_buf),
+    .committed = array_len(__log_buf),
+    .memory = __log_buf,
+};
+
+void assert_handle(
+    const char *_prefix,
+    const char *_cond,
+    const char *_file,
+    const char *_line,
+    const char *_msg,
+    ...
+) {
+    String prefix = string_lit(_prefix);
+    String cond = string_lit(_cond);
+    String file = string_lit(_file);
+    String line = string_lit(_line);
+    String msg = {0};
+    if (_msg != NULL) {
+        va_list va;
+        va_start(va, _msg);
+        msg = string_fmt(&__log_arena, _msg, va);
+        va_end(va);
+    }
+
+    String postfix = {0};
+    if (_cond != NULL) {
+        postfix = string_fmt(&__log_arena, ": `{}`", cond);
+    }
+
+    log_fmt(LOG_ERROR, "{}({}): {}{} {}", file, line, prefix, postfix, msg);
 }
 
-inline void log_fmt(Arena *arena, LogLevel level, const char *fmt, ...)
+inline void log_fmt(LogLevel level, const char *fmt, ...)
 {
     va_list va;
     va_start(va, fmt);
-    log_fmt_va(arena, level, fmt, va);
+    log_fmt_va(level, fmt, va);
     va_end(va);
 }
 
-inline void log_fmt_va(Arena *arena, LogLevel level, const char *fmt, va_list va)
+inline void log_fmt_va(LogLevel level, const char *fmt, va_list va)
 {
     File file = {0};
     switch (level) {
@@ -746,7 +801,11 @@ inline void log_fmt_va(Arena *arena, LogLevel level, const char *fmt, va_list va
         return;
     }
 
-    String msg = string_fmt(arena, fmt, va);
-    log(file, string_fmt(arena, "[{}] {}", __log_level_to_string, msg));
+    String newline = string_lit(OS_LINE_SEPARATOR);
+    String level_str = __log_level_to_string[level];
+    String msg = string_fmt_va(&__log_arena, fmt, va);
+    String line = string_fmt(&__log_arena, "[{}] {}{}", level_str, msg, newline);
+
+    os_file_write_string(file, line);
 }
 #endif // BASE_H

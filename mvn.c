@@ -11,31 +11,35 @@ readonly global String POM_PATHS[] = {
 
 String build_command_line(Arena *arena, String mvn_path)
 {
-    String script_name = string_lit("mvn.cmd");
-    String script = string_path_append(arena, mvn_path, script_name);
     String cmd_line = os_get_command_line(arena);
     String needle = string_lit("\"");
-    String cmd_line_trimmed = string_skip_nth_match(cmd_line, needle, 2);
-    return string_fmt(arena, "cmd.exe /C \"{}\" {}", script, cmd_line_trimmed);
+    String args = string_skip_nth_match(cmd_line, needle, 2);
+    return string_fmt(arena, "cmd.exe /C \"{}\" {}", mvn_path, args);
 }
 
 int main(void)
 {
     Arena arena = arena_init(128 * COMMIT, COMMIT);
     if (arena.memory == NULL) {
-        File stream = os_get_std_file(OS_STDERR, true);
-        log(stream, string_lit("[FATAL] memory allocation error"));
+        log_fmt(LOG_ERROR, "fatal memory allocation error");
         return 1;
     }
 
     String maven_home = os_get_env(&arena, string_lit("MAVEN_HOME"));
     String path = os_get_env(&arena, string_lit("PATH"));
     StringList path_list = string_split(&arena, path, string_lit(";"));
-    String mvn_path = string_is_empty(maven_home) ?
-        string_list_find_first_match(&path_list, string_lit("apache-maven")) :
-        string_path_append(&arena, maven_home, string_lit("bin"));
+    String mvn_path = {0};
+    if (string_is_empty(maven_home)) {
+        log_fmt(LOG_INFO, "searching for maven in PATH");
+        String pattern = string_lit("apache-maven");
+        mvn_path = string_list_find_first_match(&path_list, pattern);
+    } else {
+        log_fmt(LOG_INFO, "using maven from MAVEN_HOME");
+        mvn_path = string_path_append(&arena, maven_home, string_lit("bin"));
+    }
+
     if (string_is_empty(mvn_path)) {
-        log_fmt(&arena, LOG_ERROR, "maven not found\n");
+        log_fmt(LOG_ERROR, "maven not found\n");
         return 1;
     }
 
@@ -55,18 +59,28 @@ int main(void)
     }
 
     String jdk_path = {0};
-    if (!string_is_empty(version)) {
+    if (string_is_empty(version)) {
+        log_fmt(LOG_INFO, "no JDK target property found (using JAVA_HOME)");
+    } else {
+        log_fmt(LOG_INFO, "found JDK {} target in pom", version);
+
         String jdk_target = string_fmt(&arena, "jdk-{}", version);
         jdk_path = string_list_find_first_match(&path_list, jdk_target);
-        if (!string_is_empty(jdk_path)) {
+        if (string_is_empty(jdk_path)) {
+            log_fmt(LOG_INFO, "found no JDK {} installation (using JAVA_HOME)", version);
+        } else {
+            jdk_path = string_path_pop(jdk_path); log_fmt(LOG_INFO, "found JDK {} installation ({})", version, jdk_path);
             String jdk_key = string_lit("JAVA_HOME");
-            os_set_env(&arena, jdk_key, string_path_pop(jdk_path));
+            os_set_env(&arena, jdk_key, jdk_path);
             if (string_parse_u64(version) == 17) {
                 String mvn_key = string_lit("MAVEN_OPTS");
                 os_set_env(&arena, mvn_key, JDK17_FLAGS);
             }
         }
     }
+
+    mvn_path = string_path_append(&arena, mvn_path, string_lit("mvn.cmd"));
+    log_fmt(LOG_INFO, "running maven script ({})", mvn_path);
 
     b32 ok = os_spawn_process(&arena, build_command_line(&arena, mvn_path));
     return !ok;

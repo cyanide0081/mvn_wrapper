@@ -8,7 +8,7 @@ if "%~1" equ "debug" (
 )
 
 @echo on
-clang -o mvn.exe mvn.c -std=c99 -Wall -Wextra -pedantic %_FLAGS%
+clang -o mvn.exe mvn.c -std=c99 -Wall -Wextra -Wpedantic %_FLAGS%
 @echo off
 
 endlocal
