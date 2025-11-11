@@ -25,8 +25,6 @@ String build_command_line(Arena *arena, String mvn_path)
 {
     String cmd_line = os_get_command_line(arena);
     String args = skip_first_arg(cmd_line);
-    log_fmt(LOG_INFO, "cmd_line: {}", cmd_line);
-    log_fmt(LOG_INFO, "args: {}", args);
     return string_fmt(arena, "cmd.exe /C \"{}\" {}", mvn_path, args);
 }
 
