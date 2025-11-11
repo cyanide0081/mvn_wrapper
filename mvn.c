@@ -9,11 +9,24 @@ readonly global String POM_PATHS[] = {
     string_lit("java/pom.xml"),
 };
 
+String skip_first_arg(String cmd_line)
+{
+    String start = string_trim_leading(cmd_line);
+    char c = start.str[0];
+    if (string_contains_char(string_lit("\"'"), c)) {
+        start = string_cut_leading(start, 1);
+        return string_skip_first_match(start, string_from_char(c));
+    }
+
+    return string_skip_first_match(start, string_lit(" "));
+}
+
 String build_command_line(Arena *arena, String mvn_path)
 {
     String cmd_line = os_get_command_line(arena);
-    String needle = string_lit("\"");
-    String args = string_skip_nth_match(cmd_line, needle, 2);
+    String args = skip_first_arg(cmd_line);
+    log_fmt(LOG_INFO, "cmd_line: {}", cmd_line);
+    log_fmt(LOG_INFO, "args: {}", args);
     return string_fmt(arena, "cmd.exe /C \"{}\" {}", mvn_path, args);
 }
 
@@ -69,7 +82,8 @@ int main(void)
         if (string_is_empty(jdk_path)) {
             log_fmt(LOG_INFO, "found no JDK {} installation (using JAVA_HOME)", version);
         } else {
-            jdk_path = string_path_pop(jdk_path); log_fmt(LOG_INFO, "found JDK {} installation ({})", version, jdk_path);
+            jdk_path = string_path_pop(jdk_path);
+            log_fmt(LOG_INFO, "found JDK {} installation ({})", version, jdk_path);
             String jdk_key = string_lit("JAVA_HOME");
             os_set_env(&arena, jdk_key, jdk_path);
             if (string_parse_u64(version) == 17) {
@@ -82,6 +96,7 @@ int main(void)
     mvn_path = string_path_append(&arena, mvn_path, string_lit("mvn.cmd"));
     log_fmt(LOG_INFO, "running maven script ({})", mvn_path);
 
-    b32 ok = os_spawn_process(&arena, build_command_line(&arena, mvn_path));
+    String cmd_line = build_command_line(&arena, mvn_path);
+    b32 ok = os_spawn_process(&arena, cmd_line);
     return !ok;
 }

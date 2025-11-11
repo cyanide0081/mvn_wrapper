@@ -211,7 +211,6 @@ internal usize wcstring_len(const u16 *str);
 
 internal String string_from_cstring(const char *str);
 internal String16 string16_from_wcstring(const u16 *str);
-internal String string_trim_leading(String s);
 internal b32 string_starts_with(String a, String b);
 internal b32 string_contains(String haystack, String needle);
 internal String string_keep_number(String s);
@@ -219,15 +218,19 @@ internal String string_fmt(Arena *arena, const char *fmt, ...);
 internal String string_fmt_va(Arena *arena, const char *fmt, va_list va);
 internal String string_skip_first_match(String s, String target);
 internal String string_skip_nth_match(String s, String target, usize n);
+internal String string_cut_leading(String s, usize n);
+internal String string_trim_leading(String s);
 internal String string_path_append(Arena *arena, String path, String elem);
 internal String string_path_pop(String path);
 internal u64 string_parse_u64(String s);
 
 internal StringList string_split(Arena *arena, String s, String delims);
 internal void string_list_push_back(Arena *arena, StringList *list, String s);
+internal void string_list_pop_front(StringList *list);
 internal String string_list_find_first_match(StringList *list, String needle);
-internal String string_list_flatten(Arena *arena, StringList *list);
+internal String string_list_join(Arena *arena, StringList *list, String delim);
 
+#ifndef MODE_RELEASE
 internal void assert_handle(
     const char *_prefix,
     const char *_cond,
@@ -236,6 +239,7 @@ internal void assert_handle(
     const char *_msg,
     ...
 );
+#endif
 
 internal void log_fmt(LogLevel level, const char *fmt, ...);
 internal void log_fmt_va(LogLevel level, const char *fmt, va_list va);
@@ -541,17 +545,6 @@ inline String16 string16_from_wcstring(const u16 *str)
     return string16_create(str, wcstring_len(str));
 }
 
-inline String string_trim_leading(String s)
-{
-    u8 *start = s.str;
-    u8 *cur = start;
-    while (char_is_whitespace(*cur)) {
-        cur += 1;
-    }
-
-    return string_create(cur, s.len - (cur - start));
-}
-
 inline b32 string_starts_with(String a, String b)
 {
     if (b.len > a.len) {
@@ -616,7 +609,7 @@ inline String string_fmt_va(Arena *arena, const char *fmt, va_list va)
     }
 
     string_list_push_back(arena, &parts, string_create(&fmt[cur], i - cur));
-    return string_list_flatten(arena, &parts);
+    return string_list_join(arena, &parts, string_lit(""));
 }
 
 inline String string_skip_first_match(String s, String target)
@@ -627,21 +620,39 @@ inline String string_skip_first_match(String s, String target)
 String string_skip_nth_match(String s, String target, usize n)
 {
     usize matches = 0;
-    u8 *cur = s.str;
     usize len = s.len;
-    for (usize i = 0; i < len; i++) {
-        if (mem_equal(&cur[i], target.str, target.len)) {
+    usize i = 0;
+    for (; i < len; i++) {
+        if (mem_equal(&s.str[i], target.str, target.len)) {
             matches += 1;
+            i += target.len;
             if (matches == n) {
-                usize index = i + target.len;
-                cur = &cur[index];
-                len -= index;
                 break;
             }
         }
     }
 
-    return string_create(cur, len);
+    return string_create(&s.str[i], len - i);
+}
+
+inline String string_cut_leading(String s, usize n)
+{
+    if (s.len <= n) {
+        s.str += n;
+        s.len -= n;
+    }
+
+    return s;
+}
+
+inline String string_trim_leading(String s)
+{
+    usize i = 0;
+    while (i < s.len && char_is_whitespace(s.str[i])) {
+        i += 1;
+    }
+
+    return string_create(&s.str[i], s.len - i);
 }
 
 inline String string_path_append(Arena *arena, String path, String elem)
@@ -710,6 +721,17 @@ inline void string_list_push_back(Arena *arena, StringList *list, String s)
     list->last = node;
 }
 
+inline void string_list_pop_front(StringList *list)
+{
+    if (list->node_count > 0) {
+        StringNode *first = list->first;
+
+        list->node_count -= 1;
+        list->total_len -= first->str.len;
+        list->first = first->next;
+    }
+}
+
 inline String string_list_find_first_match(StringList *list, String needle)
 {
     String result = {0};
@@ -727,20 +749,30 @@ inline String string_list_find_first_match(StringList *list, String needle)
     return result;
 }
 
-inline String string_list_flatten(Arena *arena, StringList *list)
+inline String string_list_join(Arena *arena, StringList *list, String delim)
 {
-    usize len = list->total_len;
-    u8 *buf = arena_alloc(arena, len + 1);
+    if (list->node_count == 0) {
+        return (String){0};
+    }
+
+    usize total_len = list->total_len + (delim.len * (list->node_count - 1));
+    u8 *buf = arena_alloc(arena, total_len + 1);
     u8 *cur = buf;
     StringNode *cur_node = list->first;
     for (usize i = 0; i < list->node_count; i++) {
         String str = cur_node->str;
+        usize len = str.len;
         mem_copy(cur, str.str, str.len);
+        if (delim.len > 0 && cur_node != list->last) {
+            mem_copy(&cur[len], delim.str, delim.len);
+            len += delim.len;
+        }
+
         cur_node = cur_node->next;
-        cur += str.len;
+        cur += len;
     }
 
-    return string_create(buf, len);
+    return string_create(buf, total_len);
 }
 
 global u8 __log_buf[0x1000];
@@ -750,6 +782,7 @@ global Arena __log_arena = {
     .memory = __log_buf,
 };
 
+#ifndef MODE_RELEASE
 void assert_handle(
     const char *_prefix,
     const char *_cond,
@@ -777,6 +810,7 @@ void assert_handle(
 
     log_fmt(LOG_ERROR, "{}({}): {}{} {}", file, line, prefix, postfix, msg);
 }
+#endif
 
 inline void log_fmt(LogLevel level, const char *fmt, ...)
 {
