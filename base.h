@@ -161,6 +161,10 @@ typedef struct {
     void *handle;
 } File;
 
+typedef struct {
+    void *handle;
+} Process;
+
 typedef enum {
     LOG_ERROR,
     LOG_INFO,
@@ -178,9 +182,9 @@ typedef enum {
 #define mem_copy(d, s, len) os_mem_copy(d, s, len)
 
 readonly global u8 OS_PATH_SEPARATOR = __OS_PATH_SEPARATOR;
-readonly global String __log_level_to_string[] = {
-    [LOG_ERROR] = string_lit("ERROR"),
-    [LOG_INFO] = string_lit("INFO"),
+readonly global char *__LOG_LEVEL_TO_STRING[] = {
+    [LOG_ERROR] = "ERROR",
+    [LOG_INFO] = "INFO",
 };
 
 internal b32 is_power_of_two(uptr value);
@@ -199,7 +203,8 @@ internal usize os_file_size(void *handle);
 internal b32 os_file_close(File file);
 internal String os_file_read_into_string(Arena *arena, File file);
 internal void os_file_write_string(File file, String s);
-internal b32 os_spawn_process(Arena *arena, String args);
+internal Process os_process_spawn(Arena *arena, String args);
+internal void os_process_await(Process process);
 
 internal Arena arena_init(usize reserve, usize commit);
 internal void *arena_alloc(Arena *arena, usize size);
@@ -350,7 +355,7 @@ inline String os_get_command_line(Arena *arena)
 String os_get_env(Arena *arena, String var)
 {
     String16 var_utf16 = win32_utf16_from_utf8(arena, var);
-    usize str_size_utf16 = GetEnvironmentVariableW(var_utf16.str, NULL, 0);
+    DWORD str_size_utf16 = GetEnvironmentVariableW(var_utf16.str, NULL, 0);
     u16 *str_utf16 = arena_alloc_array(arena, str_size_utf16, u16);
     usize len_utf16 = GetEnvironmentVariableW(
         var_utf16.str,
@@ -412,21 +417,21 @@ inline String os_file_read_into_string(Arena *arena, File file)
 {
     usize size = file.size;
     u8 *buf = arena_alloc(arena, size + 1);
-    ReadFile(file.handle, buf, size, NULL, NULL);
+    ReadFile(file.handle, buf, (DWORD)size, NULL, NULL);
     return string_create(buf, size);
 }
 
 inline void os_file_write_string(File file, String s)
 {
-    WriteFile(file.handle, s.str, s.len, NULL, NULL);
+    WriteFile(file.handle, s.str, (DWORD)s.len, NULL, NULL);
 }
 
-inline b32 os_spawn_process(Arena *arena, String args)
+inline Process os_process_spawn(Arena *arena, String args)
 {
     String16 args_utf16 = win32_utf16_from_utf8(arena, args);
     PROCESS_INFORMATION process_info = {0};
     STARTUPINFOW startup_info = {.cb = sizeof(startup_info)};
-    b32 ok = CreateProcessW(
+    CreateProcessW(
         NULL,
         args_utf16.str,
         NULL,
@@ -438,12 +443,16 @@ inline b32 os_spawn_process(Arena *arena, String args)
         &startup_info,
         &process_info
     );
-    if (ok) {
-        WaitForSingleObject(process_info.hProcess, INFINITE);
-    }
-
-    return ok;
+    return (Process){
+        .handle = process_info.hProcess,
+    };
 }
+
+inline void os_process_await(Process process)
+{
+    WaitForSingleObject(process.handle, INFINITE);
+}
+
 #endif // OS_WINDOWS
 
 Arena arena_init(usize reserve, usize commit)
@@ -836,7 +845,7 @@ inline void log_fmt_va(LogLevel level, const char *fmt, va_list va)
     }
 
     String newline = string_lit(OS_LINE_SEPARATOR);
-    String level_str = __log_level_to_string[level];
+    String level_str = string_lit(__LOG_LEVEL_TO_STRING[level]);
     String msg = string_fmt_va(&__log_arena, fmt, va);
     String line = string_fmt(&__log_arena, "[{}] {}{}", level_str, msg, newline);
 

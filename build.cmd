@@ -1,14 +1,37 @@
-@rem currently only compiles with LLVM Clang on Windows
+@rem currently only compiles with MSVC or LLVM Clang on Windows
 @echo off
 setlocal
-if "%~1" equ "debug" (
-	set "_FLAGS=-O0 -g -gcodeview
-) else (
-	set "_FLAGS=-Os -g0 -DMODE_RELEASE -lmsvcrt -Xlinker /NODEFAULTLIB:libcmt
+
+where /q "clang" && (
+	set "CC=clang"
+) || where /q "cl" && (
+	set "CC=cl"
+) || (
+	echo no suitable compiler found
+	goto exit
+)
+
+if "%CC%" == "clang" (
+	set "FLAGS=-o mvn.exe -std=c99 -Wall -Wextra -Wpedantic"
+	set "LFLAGS=-lmsvcrt -nostdlib -Xlinker /NODEFAULTLIB:libcmt"
+	if "%~1" equ "debug" (
+		set "DFLAGS=-O0 -g -gcodeview"
+	) else (
+		set "DFLAGS=-Os -DMODE_RELEASE"
+	)
+) else if "%CC%" == "cl" (
+	set "FLAGS=/W3"
+	set "LFLAGS=msvcrt.lib /link /NODEFAULTLIB:libcmt /out:mvn.exe"
+	if "%~1" equ "debug" (
+		set "DFLAGS=/Od /Zi"
+	) else (
+		set "DFLAGS=/Os /DMODE_RELEASE"
+	)
 )
 
 @echo on
-clang -o mvn.exe mvn.c -std=c99 -Wall -Wextra -Wpedantic %_FLAGS%
+%CC% mvn.c %FLAGS% %DFLAGS% %LFLAGS%
 @echo off
 
+:exit
 endlocal
