@@ -205,6 +205,7 @@ internal String os_file_read_into_string(Arena *arena, File file);
 internal void os_file_write_string(File file, String s);
 internal Process os_process_spawn(Arena *arena, String args);
 internal void os_process_await(Process process);
+internal u64 os_get_last_error(void);
 
 internal Arena arena_init(usize reserve, usize commit);
 internal void *arena_alloc(Arena *arena, usize size);
@@ -227,6 +228,7 @@ internal String string_cut_leading(String s, usize n);
 internal String string_trim_leading(String s);
 internal String string_path_append(Arena *arena, String path, String elem);
 internal String string_path_pop(String path);
+internal String string_from_u64(Arena *arena, u64 val);
 internal u64 string_parse_u64(String s);
 
 internal StringList string_split(Arena *arena, String s, String delims);
@@ -453,6 +455,10 @@ inline void os_process_await(Process process)
     WaitForSingleObject(process.handle, INFINITE);
 }
 
+inline u64 os_get_last_error(void)
+{
+   return (u64)GetLastError();
+}
 #endif // OS_WINDOWS
 
 Arena arena_init(usize reserve, usize commit)
@@ -684,16 +690,38 @@ inline String string_path_pop(String path)
     return result;
 }
 
-readonly global u8 __u8_from_symbol[128] = {
+readonly global u8 __SYMBOL_FROM_U8[10] = {
+    [0] = 48, [1] = 49, [2] = 50, [3] = 51, [4] = 52,
+    [5] = 53, [6] = 54, [7] = 55, [8] = 56, [9] = 57
+};
+readonly global u8 __U8_FROM_SYMBOL[128] = {
     [48] = 0x00, [49] = 0x01, [50] = 0x02, [51] = 0x03, [52] = 0x04,
     [53] = 0x05, [54] = 0x06, [55] = 0x07, [56] = 0x08, [57] = 0x09,
 };
 
-inline u64 string_parse_u64(String s)
+String string_from_u64(Arena *arena, u64 val)
+{
+    u64 radix = 10;
+    u64 reduced = val;
+    usize digits = 0;
+    do {
+        reduced /= radix;
+        digits += 1;
+    } while (reduced != 0);
+    u8* buf = arena_alloc(arena, digits + 1);
+    for (usize i = 0; i < digits; i++) {
+        buf[digits - i - 1] = __SYMBOL_FROM_U8[val % radix];
+        val /= radix;
+    }
+
+    return string_create(buf, digits);
+}
+
+u64 string_parse_u64(String s)
 {
     u64 val = 0;
     for (usize i = 0; i < s.len; i++) {
-        val = val * 10 + __u8_from_symbol[s.str[i] & 0x7F];
+        val = val * 10 + __U8_FROM_SYMBOL[s.str[i] & 0x7F];
     }
 
     return val;
@@ -845,7 +873,7 @@ inline void log_fmt_va(LogLevel level, const char *fmt, va_list va)
     }
 
     String newline = string_lit(OS_LINE_SEPARATOR);
-    String level_str = string_lit(__LOG_LEVEL_TO_STRING[level]);
+    String level_str = string_from_cstring(__LOG_LEVEL_TO_STRING[level]);
     String msg = string_fmt_va(&__log_arena, fmt, va);
     String line = string_fmt(&__log_arena, "[{}] {}{}", level_str, msg, newline);
 

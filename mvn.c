@@ -3,7 +3,7 @@
 #define COMMIT (1024 * 1024)
 
 readonly global char JDK17_FLAGS[] = "--add-opens java.base/java.lang=ALL-UNNAMED";
-readonly global char *POM_PATHS[] = {"pom.xml", "java/pom.xml"};
+readonly global char *POM_DIRS[] = {".", "java"};
 
 String skip_first_arg(String cmd_line)
 {
@@ -51,8 +51,10 @@ int main(void)
     }
 
     File file = {0};
-    for (usize i = 0; i < array_len(POM_PATHS) && file.handle == NULL; i++) {
-        file = os_file_open(&arena, string_lit(POM_PATHS[i]));
+    for (usize i = 0; i < array_len(POM_DIRS) && file.handle == NULL; i++) {
+        String dir = string_from_cstring(POM_DIRS[i]);
+        String path = string_path_append(&arena, dir, string_lit("pom.xml"));
+        file = os_file_open(&arena, path);
     }
 
     String version = {0};
@@ -82,17 +84,19 @@ int main(void)
             os_set_env(&arena, jdk_key, jdk_path);
             if (string_parse_u64(version) == 17) {
                 String mvn_key = string_lit("MAVEN_OPTS");
-                os_set_env(&arena, mvn_key, string_lit(JDK17_FLAGS));
+                os_set_env(&arena, mvn_key, string_from_cstring(JDK17_FLAGS));
             }
         }
     }
 
-    mvn_path = string_path_append(&arena, mvn_path, string_lit("mvn.cmd"));
+    mvn_path = string_path_append(&arena, mvn_path, string_lit("mvn"));
     log_fmt(LOG_INFO, "running maven script ({})", mvn_path);
 
     String cmd_line = build_command_line(&arena, mvn_path);
     Process proc = os_process_spawn(&arena, cmd_line);
     if (proc.handle == NULL) {
+        String err = string_from_u64(&arena, os_get_last_error());
+        log_fmt(LOG_ERROR, "unable to launch mvn: error code {}", err);
         return 1;
     }
 
