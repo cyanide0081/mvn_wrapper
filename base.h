@@ -652,12 +652,8 @@ String string_skip_nth_match(String s, String target, usize n)
 
 inline String string_cut_leading(String s, usize n)
 {
-    if (s.len <= n) {
-        s.str += n;
-        s.len -= n;
-    }
-
-    return s;
+    usize i = min(n, s.len);
+    return string_create(&s.str[i], s.len - i);
 }
 
 inline String string_trim_leading(String s)
