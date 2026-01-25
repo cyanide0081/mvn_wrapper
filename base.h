@@ -7,6 +7,22 @@
  * NOTE(cya): declarations *
  ***************************/
 
+
+// NOTE(cya): context cracking
+#if defined(_MSC_VER)
+#define COMPILER_MSVC
+#elif defined(__clang__)
+#define COMPILER_CLANG
+#else
+#error unsupported compiler
+#endif
+
+#if defined(_WIN32)
+#define OS_WINDOWS
+#else
+#error unsupported operating system
+#endif
+
 #define internal static
 #define global static
 #define local_persist static
@@ -19,8 +35,7 @@
 #define DEFAULT_ALIGN (uptr)(2 * sizeof(void*))
 #endif
 
-#ifdef _WIN32
-#define OS_WINDOWS
+#ifdef OS_WINDOWS
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
@@ -43,9 +58,6 @@ typedef signed long long i64;
 
 typedef uintptr_t uptr;
 typedef intptr_t iptr;
-
-#else
-#error unsupported platform
 #endif
 
 typedef u64 usize;
@@ -74,18 +86,18 @@ typedef u32 b32;
 #endif // OS_WINDOWS
 #endif // readonly
 
-#ifdef _MSC_VER
+#ifdef COMPILER_MSVC
 #define thread_local __declspec(thread)
 #else
 #define thread_local __thread
-#endif // _MSC_VER
+#endif // COMPILER_MSVC
 
 #ifndef noop
 #define noop() ((void)0)
 #endif
 
 #ifndef debug_trap
-#ifdef _MSC_VER
+#ifdef COMPILER_MSVC
 #if _MSC_VER < 1300
 #define debug_trap() __asm int 3
 #else
@@ -93,7 +105,7 @@ typedef u32 b32;
 #endif // _MSC_VER < 1300
 #else
 #define debug_trap() __builtin_trap()
-#endif // _MSC_VER
+#endif // COMPILER_MSVC
 #endif
 
 #ifndef stringify
