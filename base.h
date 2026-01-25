@@ -72,7 +72,13 @@ typedef u32 b32;
 #else
 #define readonly
 #endif // OS_WINDOWS
-#endif
+#endif // readonly
+
+#ifdef _MSC_VER
+#define thread_local __declspec(thread)
+#else
+#define thread_local __thread
+#endif // _MSC_VER
 
 #ifndef noop
 #define noop() ((void)0)
@@ -165,11 +171,6 @@ typedef struct {
     void *handle;
 } Process;
 
-typedef enum {
-    LOG_ERROR,
-    LOG_INFO,
-} LogLevel;
-
 #define string_is_empty(s) (s.len == 0)
 #define string_create(s, l) ((String){.len = (usize)l, .str = (u8*)s})
 #define string_lit(s) string_create(s, sizeof(s) - 1)
@@ -182,10 +183,6 @@ typedef enum {
 #define mem_copy(d, s, len) os_mem_copy(d, s, len)
 
 readonly global u8 OS_PATH_SEPARATOR = __OS_PATH_SEPARATOR;
-readonly global char *__LOG_LEVEL_TO_STRING[] = {
-    [LOG_ERROR] = "ERROR",
-    [LOG_INFO] = "INFO",
-};
 
 internal b32 is_power_of_two(uptr value);
 internal usize align_forward_size(usize value, usize align);
@@ -201,14 +198,18 @@ internal void os_set_env(Arena *arena, String key, String value);
 internal File os_file_open(Arena *arena, String path);
 internal usize os_file_size(void *handle);
 internal b32 os_file_close(File file);
+internal b32 os_file_exists(Arena *arena, String path);
 internal String os_file_read_into_string(Arena *arena, File file);
 internal void os_file_write_string(File file, String s);
 internal Process os_process_spawn(Arena *arena, String args);
 internal void os_process_await(Process process);
 internal u64 os_get_last_error(void);
+internal String os_get_error_message(u64 error_code);
 
 internal Arena arena_init(usize reserve, usize commit);
+internal Arena arena_init_from_buffer(void *buffer, usize size);
 internal void *arena_alloc(Arena *arena, usize size);
+internal void arena_reset(Arena *arena);
 
 internal b32 char_is_whitespace(char c);
 internal b32 char_is_digit(char c);
@@ -226,6 +227,7 @@ internal String string_skip_first_match(String s, String target);
 internal String string_skip_nth_match(String s, String target, usize n);
 internal String string_cut_leading(String s, usize n);
 internal String string_trim_leading(String s);
+internal String string_trim_trailing(String s);
 internal String string_path_append(Arena *arena, String path, String elem);
 internal String string_path_pop(String path);
 internal String string_from_u64(Arena *arena, u64 val);
@@ -248,8 +250,11 @@ internal void assert_handle(
 );
 #endif
 
-internal void log_fmt(LogLevel level, const char *fmt, ...);
-internal void log_fmt_va(LogLevel level, const char *fmt, va_list va);
+internal void log_info(const char *fmt, ...);
+internal void log_warn(const char *fmt, ...);
+internal void log_error(const char *fmt, ...);
+internal void log_fatal(const char *fmt, ...);
+internal void __log_va(const char *level, const char *fmt, va_list va);
 
 /******************************
  * NOTE(cya): implementations *
@@ -415,6 +420,13 @@ b32 os_file_close(File file)
     return CloseHandle(file.handle);
 }
 
+b32 os_file_exists(Arena *arena, String path)
+{
+    String16 path_16 = win32_utf16_from_utf8(arena, path);
+    DWORD attributes = GetFileAttributesW(path_16.str);
+    return attributes != INVALID_FILE_ATTRIBUTES;
+}
+
 inline String os_file_read_into_string(Arena *arena, File file)
 {
     usize size = file.size;
@@ -455,9 +467,36 @@ inline void os_process_await(Process process)
     WaitForSingleObject(process.handle, INFINITE);
 }
 
+thread_local u16 __win32_error_buf[4096];
+
 inline u64 os_get_last_error(void)
 {
-   return (u64)GetLastError();
+    return (u64)GetLastError();
+}
+
+String os_get_error_message(u64 error_code)
+{
+    u16 *msg = (u16*)&__win32_error_buf;
+    usize buf_size = array_len(__win32_error_buf);
+    usize size = buf_size / sizeof(*msg);
+    usize msg_len = FormatMessageW(
+        FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL,
+        (DWORD)error_code,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPWSTR)msg,
+        (DWORD)size,
+        NULL
+    );
+    if (msg_len == 0) {
+        return string_lit("");
+    }
+
+    Arena arena = arena_init_from_buffer(__win32_error_buf, buf_size);
+    arena.offset = (msg_len + 1) * sizeof(*msg);
+
+    String result =  win32_utf8_from_utf16(&arena, string16_create(msg, msg_len));
+    return string_trim_trailing(result);
 }
 #endif // OS_WINDOWS
 
@@ -480,6 +519,15 @@ Arena arena_init(usize reserve, usize commit)
         .committed = committed,
         .block_size = committed,
         .memory = memory,
+    };
+}
+
+Arena arena_init_from_buffer(void *buffer, usize size)
+{
+    return (Arena){
+        .reserved = size,
+        .committed = size,
+        .memory = buffer,
     };
 }
 
@@ -507,6 +555,11 @@ void *arena_alloc(Arena *arena, usize size)
     usize new_offset = base_offset + size;
     arena->offset = new_offset;
     return (void*)base_addr;
+}
+
+inline void arena_reset(Arena *arena)
+{
+    arena->offset = 0;
 }
 
 // NOTE(cya): ASCII only
@@ -666,6 +719,16 @@ inline String string_trim_leading(String s)
     return string_create(&s.str[i], s.len - i);
 }
 
+inline String string_trim_trailing(String s)
+{
+    usize i = s.len - 1;
+    while (i >= 0 && char_is_whitespace(s.str[i])) {
+        i -= 1;
+    }
+
+    return string_create(s.str, i);
+}
+
 inline String string_path_append(Arena *arena, String path, String elem)
 {
     String separator = string_from_char(OS_PATH_SEPARATOR);
@@ -695,7 +758,9 @@ readonly global u8 __U8_FROM_SYMBOL[128] = {
     [53] = 0x05, [54] = 0x06, [55] = 0x07, [56] = 0x08, [57] = 0x09,
 };
 
-String string_from_u64(Arena *arena, u64 val)
+thread_local u8 __u64_buffer[20 + 1];
+
+inline String string_from_u64(Arena *arena, u64 val)
 {
     u64 radix = 10;
     u64 reduced = val;
@@ -704,7 +769,7 @@ String string_from_u64(Arena *arena, u64 val)
         reduced /= radix;
         digits += 1;
     } while (reduced != 0);
-    u8* buf = arena_alloc(arena, digits + 1);
+    u8* buf = arena == NULL ? __u64_buffer : arena_alloc(arena, digits + 1);
     for (usize i = 0; i < digits; i++) {
         buf[digits - i - 1] = __SYMBOL_FROM_U8[val % radix];
         val /= radix;
@@ -713,7 +778,7 @@ String string_from_u64(Arena *arena, u64 val)
     return string_create(buf, digits);
 }
 
-u64 string_parse_u64(String s)
+inline u64 string_parse_u64(String s)
 {
     u64 val = 0;
     for (usize i = 0; i < s.len; i++) {
@@ -808,12 +873,7 @@ inline String string_list_join(Arena *arena, StringList *list, String delim)
     return string_create(buf, total_len);
 }
 
-global u8 __log_buf[0x1000];
-global Arena __log_arena = {
-    .reserved = array_len(__log_buf),
-    .committed = array_len(__log_buf),
-    .memory = __log_buf,
-};
+thread_local u8 __msg_buf[4096];
 
 #ifndef MODE_RELEASE
 void assert_handle(
@@ -824,6 +884,7 @@ void assert_handle(
     const char *_msg,
     ...
 ) {
+    Arena arena = arena_init_from_buffer(__msg_buf, array_len(__msg_buf));
     String prefix = string_lit(_prefix);
     String cond = string_lit(_cond);
     String file = string_lit(_file);
@@ -832,46 +893,59 @@ void assert_handle(
     if (_msg != NULL) {
         va_list va;
         va_start(va, _msg);
-        msg = string_fmt(&__log_arena, _msg, va);
+        msg = string_fmt(&arena, _msg, va);
         va_end(va);
     }
 
     String postfix = {0};
     if (_cond != NULL) {
-        postfix = string_fmt(&__log_arena, ": `{}`", cond);
+        postfix = string_fmt(&arena, ": `{}`", cond);
     }
 
-    log_fmt(LOG_ERROR, "{}({}): {}{} {}", file, line, prefix, postfix, msg);
+    log_error("{}({}): {}{} {}", file, line, prefix, postfix, msg);
 }
 #endif
 
-inline void log_fmt(LogLevel level, const char *fmt, ...)
+inline void log_info(const char *fmt, ...)
 {
     va_list va;
     va_start(va, fmt);
-    log_fmt_va(level, fmt, va);
+    __log_va("INFO", fmt, va);
     va_end(va);
 }
 
-inline void log_fmt_va(LogLevel level, const char *fmt, va_list va)
+inline void log_warn(const char *fmt, ...)
 {
-    File file = {0};
-    switch (level) {
-    case LOG_INFO: {
-        file = os_get_std_file(OS_STDOUT, true);
-    } break;
-    case LOG_ERROR: {
-        file = os_get_std_file(OS_STDERR, true);
-    } break;
-    }
-    if (file.handle == NULL) {
-        return;
-    }
+    va_list va;
+    va_start(va, fmt);
+    __log_va("WARN", fmt, va);
+    va_end(va);
+}
 
+inline void log_error(const char *fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+    __log_va("ERROR", fmt, va);
+    va_end(va);
+}
+
+inline void log_fatal(const char *fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+    __log_va("FATAL", fmt, va);
+    va_end(va);
+}
+
+inline void __log_va(const char *level, const char *fmt, va_list va)
+{
+    Arena arena = arena_init_from_buffer(__msg_buf, array_len(__msg_buf));
+    File file = os_get_std_file(OS_STDOUT, true);
     String newline = string_lit(OS_LINE_SEPARATOR);
-    String level_str = string_from_cstring(__LOG_LEVEL_TO_STRING[level]);
-    String msg = string_fmt_va(&__log_arena, fmt, va);
-    String line = string_fmt(&__log_arena, "[{}] {}{}", level_str, msg, newline);
+    String msg = string_fmt_va(&arena, fmt, va);
+    String log_level = string_from_cstring(level);
+    String line = string_fmt(&arena, "[{}] {}{}", log_level, msg, newline);
 
     os_file_write_string(file, line);
 }
