@@ -37,13 +37,19 @@ int main(void)
     String path = os_get_env(&arena, string_lit("PATH"));
     StringList path_list = string_split(&arena, path, string_lit(";"));
     String mvn_path = string_lit("");
-    if (string_is_empty(maven_home)) {
-        log_info("using maven from PATH");
-        String pattern = string_lit("apache-maven");
-        mvn_path = string_list_find_first_match(&path_list, pattern);
-    } else {
+    if (!string_is_empty(maven_home)) {
         log_info("using maven from MAVEN_HOME");
         mvn_path = string_path_append(&arena, maven_home, string_lit("bin"));
+    } else {
+        log_info("using maven from PATH");
+
+        // NOTE(cya): exclude ourselves from the path list
+        String process_img_full_path = os_get_process_filename(&arena);
+        String process_img_path = string_path_pop(process_img_full_path);
+        string_list_pop_matches(&path_list, process_img_path);
+
+        String pattern = string_lit("apache-maven");
+        mvn_path = string_list_find_first_match(&path_list, pattern);
     }
 
     if (string_is_empty(mvn_path)) {

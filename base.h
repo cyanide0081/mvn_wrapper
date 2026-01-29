@@ -189,7 +189,7 @@ typedef struct {
 #define string_from_char(c) string_create(&c, 1)
 #define string_contains_char(s, c) string_contains(s, string_create(&c, 1))
 #define string16_create(s, l) ((String16){.len = (usize)l, .str = (u16*)s})
-#define arena_alloc_array(a, size, type) arena_alloc(a, (size) * sizeof(type))
+#define arena_push_array(a, size, type) arena_push(a, (size) * sizeof(type))
 #define array_len(a) ((usize)sizeof(a) / sizeof(a[0]))
 #define mem_equal(d, s, len) os_mem_equal(d, s, len)
 #define mem_copy(d, s, len) os_mem_copy(d, s, len)
@@ -205,6 +205,7 @@ internal void *os_mem_commit(void *addr, usize size);
 internal void os_mem_protect(void *addr, usize size, u8 flags);
 internal String os_get_command_line(Arena *arena);
 internal String os_get_env(Arena *arena, String var);
+internal String os_get_process_filename(Arena *arena);
 internal File os_get_std_file(u32 descriptor, b32 handle_only);
 internal void os_set_env(Arena *arena, String key, String value);
 internal File os_file_open(Arena *arena, String path);
@@ -220,7 +221,8 @@ internal String os_get_error_message(u64 error_code);
 
 internal Arena arena_init(usize reserve, usize commit);
 internal Arena arena_init_from_buffer(void *buffer, usize size);
-internal void *arena_alloc(Arena *arena, usize size);
+internal void *arena_push(Arena *arena, usize size);
+internal void arena_pop(Arena *arena, usize size);
 internal void arena_reset(Arena *arena);
 
 internal b32 char_is_whitespace(char c);
@@ -247,8 +249,8 @@ internal u64 string_parse_u64(String s);
 
 internal StringList string_split(Arena *arena, String s, String delims);
 internal void string_list_push_back(Arena *arena, StringList *list, String s);
-internal void string_list_pop_front(StringList *list);
 internal String string_list_find_first_match(StringList *list, String needle);
+internal void string_list_pop_matches(StringList *list, String needle);
 internal String string_list_join(Arena *arena, StringList *list, String delim);
 
 #ifndef MODE_RELEASE
@@ -323,7 +325,7 @@ uptr align_forward(uptr value, uptr align)
 internal inline String win32_utf8_from_utf16(Arena *arena, String16 s)
 {
     i32 len_utf8 = win32_wide_char_to_multi_byte(s.str, s.len , NULL, 0);
-    char *str_utf8 = arena_alloc(arena, len_utf8 + 1);
+    char *str_utf8 = arena_push(arena, len_utf8 + 1);
     win32_wide_char_to_multi_byte(s.str, s.len, str_utf8, len_utf8);
     str_utf8[len_utf8] = '\0';
 
@@ -333,7 +335,7 @@ internal inline String win32_utf8_from_utf16(Arena *arena, String16 s)
 internal inline String16 win32_utf16_from_utf8(Arena *arena, String s)
 {
     usize len_utf16 = win32_multi_byte_to_wide_char(s.str, s.len, NULL, 0);
-    u16 *str_utf16 = arena_alloc_array(arena, (len_utf16 + 1), u16);
+    u16 *str_utf16 = arena_push_array(arena, (len_utf16 + 1), u16);
     win32_multi_byte_to_wide_char(s.str, s.len, str_utf16, len_utf16);
     str_utf16[len_utf16] = '\0';
 
@@ -375,7 +377,7 @@ String os_get_env(Arena *arena, String var)
 {
     String16 var_utf16 = win32_utf16_from_utf8(arena, var);
     DWORD str_size_utf16 = GetEnvironmentVariableW(var_utf16.str, NULL, 0);
-    u16 *str_utf16 = arena_alloc_array(arena, str_size_utf16, u16);
+    u16 *str_utf16 = arena_push_array(arena, str_size_utf16, u16);
     usize len_utf16 = GetEnvironmentVariableW(
         var_utf16.str,
         str_utf16,
@@ -383,6 +385,28 @@ String os_get_env(Arena *arena, String var)
     );
 
     return win32_utf8_from_utf16(arena, string16_create(str_utf16, len_utf16));
+}
+
+String os_get_process_filename(Arena *arena)
+{
+    usize len;
+    usize buf_size;
+    usize buf_len = MAX_PATH;
+    u16 *buf;
+    for (;;) {
+        buf_size = buf_len * sizeof(*buf);
+        buf = arena_push(arena, buf_size);
+        len = GetModuleFileNameW(NULL, buf, buf_len);
+        if (len < buf_len) {
+            break;
+        }
+
+        arena_pop(arena, buf_size);
+        buf_len *= 2;
+    }
+
+    String16 filename_16 = string16_create(buf, len);
+    return win32_utf8_from_utf16(arena, filename_16);
 }
 
 inline File os_get_std_file(u32 descriptor, b32 handle_only)
@@ -442,7 +466,7 @@ b32 os_file_exists(Arena *arena, String path)
 inline String os_file_read_into_string(Arena *arena, File file)
 {
     usize size = file.size;
-    u8 *buf = arena_alloc(arena, size + 1);
+    u8 *buf = arena_push(arena, size + 1);
     ReadFile(file.handle, buf, (DWORD)size, NULL, NULL);
     return string_create(buf, size);
 }
@@ -543,7 +567,7 @@ Arena arena_init_from_buffer(void *buffer, usize size)
     };
 }
 
-void *arena_alloc(Arena *arena, usize size)
+void *arena_push(Arena *arena, usize size)
 {
     uptr memory = (uptr)arena->memory;
     uptr cur_addr = memory + (uptr)arena->offset;
@@ -567,6 +591,11 @@ void *arena_alloc(Arena *arena, usize size)
     usize new_offset = base_offset + size;
     arena->offset = new_offset;
     return (void*)base_addr;
+}
+
+inline void arena_pop(Arena *arena, usize size)
+{
+    arena->offset -= size;
 }
 
 inline void arena_reset(Arena *arena)
@@ -749,16 +778,15 @@ inline String string_path_append(Arena *arena, String path, String elem)
 
 inline String string_path_pop(String path)
 {
-    String result = {0};
-    for (usize i = path.len - 1; i >= 0; i--) {
+    usize i;
+    for (i = path.len - 1; i > 0; i--) {
         char c = path.str[i];
         if (c == OS_PATH_SEPARATOR) {
-            result = string_create(path.str, i);
             break;
         }
     }
 
-    return result;
+    return string_create(path.str, i);
 }
 
 readonly global u8 __SYMBOL_FROM_U8[10] = {
@@ -781,7 +809,7 @@ inline String string_from_u64(Arena *arena, u64 val)
         reduced /= radix;
         digits += 1;
     } while (reduced != 0);
-    u8* buf = arena == NULL ? __u64_buffer : arena_alloc(arena, digits + 1);
+    u8* buf = arena == NULL ? __u64_buffer : arena_push(arena, digits + 1);
     for (usize i = 0; i < digits; i++) {
         buf[digits - i - 1] = __SYMBOL_FROM_U8[val % radix];
         val /= radix;
@@ -818,7 +846,7 @@ StringList string_split(Arena *arena, String s, String delims)
 
 inline void string_list_push_back(Arena *arena, StringList *list, String s)
 {
-    StringNode *node = arena_alloc_array(arena, 1, StringNode);
+    StringNode *node = arena_push_array(arena, 1, StringNode);
     node->str = s;
     if (list->first == NULL) {
         list->first = node;
@@ -829,17 +857,6 @@ inline void string_list_push_back(Arena *arena, StringList *list, String s)
     list->node_count += 1;
     list->total_len += s.len;
     list->last = node;
-}
-
-inline void string_list_pop_front(StringList *list)
-{
-    if (list->node_count > 0) {
-        StringNode *first = list->first;
-
-        list->node_count -= 1;
-        list->total_len -= first->str.len;
-        list->first = first->next;
-    }
 }
 
 inline String string_list_find_first_match(StringList *list, String needle)
@@ -859,6 +876,29 @@ inline String string_list_find_first_match(StringList *list, String needle)
     return result;
 }
 
+inline void string_list_pop_matches(StringList *list, String needle)
+{
+    StringNode *prev = NULL;
+    StringNode *curr = list->first;
+    for (usize i = 0; i < list->node_count; i++) {
+        String str = curr->str;
+        if (string_contains(str, needle)) {
+            list->node_count -= 1;
+            if (curr == list->first) {
+                list->first->next = curr->next;
+            } else {
+                prev->next = curr->next;
+                if (curr == list->last) {
+                    list->last = prev;
+                }
+            }
+        }
+
+        prev = curr;
+        curr = curr->next;
+    }
+}
+
 inline String string_list_join(Arena *arena, StringList *list, String delim)
 {
     if (list->node_count == 0) {
@@ -866,7 +906,7 @@ inline String string_list_join(Arena *arena, StringList *list, String delim)
     }
 
     usize total_len = list->total_len + (delim.len * (list->node_count - 1));
-    u8 *buf = arena_alloc(arena, total_len + 1);
+    u8 *buf = arena_push(arena, total_len + 1);
     u8 *cur = buf;
     StringNode *cur_node = list->first;
     for (usize i = 0; i < list->node_count; i++) {
