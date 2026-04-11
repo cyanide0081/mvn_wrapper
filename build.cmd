@@ -30,7 +30,7 @@ if "%CC%" == "clang" (
 )
 
 @echo on
-%CC% mvn.c %FLAGS% %DFLAGS% %LFLAGS%
+%CC% src\mvn.c %FLAGS% %DFLAGS% %LFLAGS%
 @echo off
 
 :exit

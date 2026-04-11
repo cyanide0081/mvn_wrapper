@@ -1,0 +1,280 @@
+inline String string_from_cstring(const char *str)
+{
+    return string_create(str, cstring_len(str));
+}
+
+inline String16 string16_from_wcstring(const u16 *str)
+{
+    return string16_create(str, wcstring_len(str));
+}
+
+inline b32 string_starts_with(String a, String b)
+{
+    if (b.len > a.len) {
+        return false;
+    }
+
+    for (usize i = 0; i < b.len; i++) {
+        if (a.str[i] != b.str[i]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+inline b32 string_contains(String haystack, String needle)
+{
+    for (usize i = 0; i < haystack.len; i++) {
+        if (mem_equal(&haystack.str[i], needle.str, needle.len)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+inline String string_keep_number(String s)
+{
+    usize i;
+    for (i = 0; i < s.len; i++) {
+        if (!char_is_digit(s.str[i])) {
+            break;
+        }
+    }
+
+    s.len = i;
+    return s;
+}
+
+inline String string_fmt(Arena *arena, const char *fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+    String str = string_fmt_va(arena, fmt, va);
+    va_end(va);
+    return str;
+}
+
+inline String string_fmt_va(Arena *arena, const char *fmt, va_list va)
+{
+    StringList parts = {0};
+    usize cur = 0, i = 0;
+    for (; fmt[i] != '\0'; i++) {
+        if (fmt[i] == '{' && fmt[i + 1] == '}') {
+            usize len = i - cur;
+            string_list_push_back(arena, &parts, string_create(&fmt[cur], len));
+            string_list_push_back(arena, &parts, va_arg(va, String));
+
+            cur += len + 2;
+            i += 1;
+        }
+    }
+
+    string_list_push_back(arena, &parts, string_create(&fmt[cur], i - cur));
+    return string_list_join(arena, &parts, string_lit(""));
+}
+
+inline String string_skip_first_match(String s, String target)
+{
+    return string_skip_nth_match(s, target, 1);
+}
+
+String string_skip_nth_match(String s, String target, usize n)
+{
+    usize matches = 0;
+    usize len = s.len;
+    usize i = 0;
+    for (; i < len; i++) {
+        if (mem_equal(&s.str[i], target.str, target.len)) {
+            matches += 1;
+            i += target.len;
+            if (matches == n) {
+                break;
+            }
+        }
+    }
+
+    return string_create(&s.str[i], len - i);
+}
+
+inline String string_cut_leading(String s, usize n)
+{
+    usize i = min(n, s.len);
+    return string_create(&s.str[i], s.len - i);
+}
+
+inline String string_trim_leading(String s)
+{
+    usize i = 0;
+    while (i < s.len && char_is_whitespace(s.str[i])) {
+        i += 1;
+    }
+
+    return string_create(&s.str[i], s.len - i);
+}
+
+inline String string_trim_trailing(String s)
+{
+    usize i = s.len - 1;
+    while (i >= 0 && char_is_whitespace(s.str[i])) {
+        i -= 1;
+    }
+
+    return string_create(s.str, i);
+}
+
+inline String string_path_append(Arena *arena, String path, String elem)
+{
+    String separator = string_from_char(PLATFORM_PATH_SEPARATOR);
+    return string_fmt(arena, "{}{}{}", path, separator, elem);
+}
+
+inline String string_path_pop(String path)
+{
+    usize i;
+    for (i = path.len - 1; i > 0; i--) {
+        char c = path.str[i];
+        if (c == PLATFORM_PATH_SEPARATOR) {
+            break;
+        }
+    }
+
+    return string_create(path.str, i);
+}
+
+readonly global u8 __SYMBOL_FROM_U8[10] = {
+    [0] = 48, [1] = 49, [2] = 50, [3] = 51, [4] = 52,
+    [5] = 53, [6] = 54, [7] = 55, [8] = 56, [9] = 57
+};
+readonly global u8 __U8_FROM_SYMBOL[128] = {
+    [48] = 0x00, [49] = 0x01, [50] = 0x02, [51] = 0x03, [52] = 0x04,
+    [53] = 0x05, [54] = 0x06, [55] = 0x07, [56] = 0x08, [57] = 0x09,
+};
+
+thread_local u8 __u64_buffer[20 + 1];
+
+inline String string_from_u64(Arena *arena, u64 val)
+{
+    u64 radix = 10;
+    u64 reduced = val;
+    usize digits = 0;
+    do {
+        reduced /= radix;
+        digits += 1;
+    } while (reduced != 0);
+    u8* buf = arena == NULL ? __u64_buffer : arena_push(arena, digits + 1);
+    for (usize i = 0; i < digits; i++) {
+        buf[digits - i - 1] = __SYMBOL_FROM_U8[val % radix];
+        val /= radix;
+    }
+
+    return string_create(buf, digits);
+}
+
+inline u64 string_parse_u64(String s)
+{
+    u64 val = 0;
+    for (usize i = 0; i < s.len; i++) {
+        val = val * 10 + __U8_FROM_SYMBOL[s.str[i] & 0x7F];
+    }
+
+    return val;
+}
+
+StringList string_split(Arena *arena, String s, String delims)
+{
+    StringList result = {0};
+    u8 *base, *str;
+    base = str = s.str;
+    for (usize i = 0; i < s.len; i++) {
+        if (i == s.len - 1 || string_contains_char(delims, str[i])) {
+            String elem = string_create(base, i - (base - str));
+            string_list_push_back(arena, &result, elem);
+            base = &str[i + 1];
+        }
+    }
+
+    return result;
+}
+
+inline void string_list_push_back(Arena *arena, StringList *list, String s)
+{
+    StringNode *node = arena_push_array(arena, 1, StringNode);
+    node->str = s;
+    if (list->first == NULL) {
+        list->first = node;
+    } else {
+        list->last->next = node;
+    }
+
+    list->node_count += 1;
+    list->total_len += s.len;
+    list->last = node;
+}
+
+inline String string_list_find_first_match(StringList *list, String needle)
+{
+    String result = {0};
+    StringNode *node = list->first;
+    for (usize i = 0; i < list->node_count; i++) {
+        String str = node->str;
+        if (string_contains(str, needle)) {
+            result = str;
+            break;
+        }
+
+        node = node->next;
+    }
+
+    return result;
+}
+
+inline void string_list_pop_matches(StringList *list, String needle)
+{
+    StringNode *prev = NULL;
+    StringNode *curr = list->first;
+    for (usize i = 0; i < list->node_count; i++) {
+        String str = curr->str;
+        if (string_contains(str, needle)) {
+            list->node_count -= 1;
+            if (curr == list->first) {
+                list->first->next = curr->next;
+            } else {
+                prev->next = curr->next;
+                if (curr == list->last) {
+                    list->last = prev;
+                }
+            }
+        }
+
+        prev = curr;
+        curr = curr->next;
+    }
+}
+
+inline String string_list_join(Arena *arena, StringList *list, String delim)
+{
+    if (list->node_count == 0) {
+        return (String){0};
+    }
+
+    usize total_len = list->total_len + (delim.len * (list->node_count - 1));
+    u8 *buf = arena_push(arena, total_len + 1);
+    u8 *cur = buf;
+    StringNode *cur_node = list->first;
+    for (usize i = 0; i < list->node_count; i++) {
+        String str = cur_node->str;
+        usize len = str.len;
+        mem_copy(cur, str.str, str.len);
+        if (delim.len > 0 && cur_node != list->last) {
+            mem_copy(&cur[len], delim.str, delim.len);
+            len += delim.len;
+        }
+
+        cur_node = cur_node->next;
+        cur += len;
+    }
+
+    return string_create(buf, total_len);
+}

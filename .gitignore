@@ -1,0 +1,8 @@
+# build and debugger artifacts
+*.exe
+*.obj
+*.pdb
+*.rdi
+
+# java directory for testing
+java/**
