@@ -7,22 +7,6 @@
  * NOTE(cya): declarations *
  ***************************/
 
-
-// NOTE(cya): context cracking
-#if defined(_MSC_VER)
-#define COMPILER_MSVC
-#elif defined(__clang__)
-#define COMPILER_CLANG
-#else
-#error unsupported compiler
-#endif
-
-#if defined(_WIN32)
-#define OS_WINDOWS
-#else
-#error unsupported operating system
-#endif
-
 #define internal static
 #define global static
 #define local_persist static
@@ -1001,4 +985,5 @@ inline void __log_va(const char *level, const char *fmt, va_list va)
 
     os_file_write_string(file, line);
 }
+
 #endif // BASE_H
