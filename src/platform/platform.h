@@ -16,6 +16,8 @@ global File __platform_std_files[3];
 
 #define platform_get_std_file(d) __platform_std_files[(d)]
 
+internal String platform_find_first_file(Arena *arena, StringList *path_list, String file);
+
 internal usize platform_get_page_size(void);
 internal void *platform_mem_reserve(void *addr, usize size);
 internal void *platform_mem_commit(void *addr, usize size);

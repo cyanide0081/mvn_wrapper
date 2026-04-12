@@ -28,16 +28,15 @@ typedef struct {
 
 #define string16_create(s, l) ((String16){.len = (usize)l, .str = (u16*)s})
 
-#define string_list_for_each(arena, list, proc) { \
-    StringNode *curr_ = list->first; \
-    for (usize i_ = 0; i_ < list->node_count; i_++) { \
-        String current_ = curr_->str; \
-        String transformed_ = proc(arena, curr_->str); \
-        list->total_len += (current_.len - transformed_.len); \
-        curr_->str = transformed_; \
-        curr_ = curr_->next; \
-    } \
-} (void)0
+#define string_list_foreach(l, s) \
+    usize i_; \
+    StringNode *node; \
+    String s; \
+    for ( \
+        i_ = 0, node = (l)->first, s = node->str; \
+        i_ < (l)->node_count; \
+        i_++, node = node->next, s = node->str \
+    )
 
 internal String string_from_cstring(const char *str);
 internal String16 string16_from_wcstring(const u16 *str);

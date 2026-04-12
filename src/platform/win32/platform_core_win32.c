@@ -165,7 +165,12 @@ inline Process platform_process_spawn(Arena *arena, CommandLine *cmd_line)
 {
     // NOTE(cya): windows expects a single command-line string
     string_list_push_front(arena, cmd_line->arguments, cmd_line->exe_name);
-    string_list_for_each(arena, cmd_line->arguments, command_line_escape_string);
+    string_list_foreach(cmd_line->arguments, argument) {
+        String escaped = command_line_escape_string(arena, argument);
+        cmd_line->arguments->total_len += (escaped.len - argument.len);
+        node->str = escaped;
+    }
+
     String args = string_list_join(arena, cmd_line->arguments, string_lit(" "));
 
     String16 args_utf16 = win32_utf16_from_utf8(arena, args);

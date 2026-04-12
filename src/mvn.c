@@ -10,7 +10,7 @@ readonly global char *POM_DIRS[] = {"", "java"};
 
 CommandLine build_mvn_command_line(Arena *arena, String mvn_path, StringList *arguments)
 {
-    String mvn_full_path = string_path_append(arena, mvn_path, string_lit("mvn"));
+    String mvn_full_path = string_path_append(arena, mvn_path, PLATFORM_MVN_FILE);
     string_list_push_front(arena, arguments, mvn_full_path);
     string_list_push_front(arena, arguments, string_lit(PLATFORM_SHELL_CMD_FLAG));
     return (CommandLine){
@@ -37,7 +37,7 @@ void entry_point(CommandLine *cmd_line)
     String mvn_path = string_lit("");
     if (!string_is_empty(maven_home)) {
         log_info("using maven from MAVEN_HOME");
-        mvn_path = string_path_append(&arena, maven_home, string_lit("bin"));
+        mvn_path = string_path_append(&arena, maven_home, PLATFORM_MVN_FILE);
     } else {
         log_info("using maven from PATH");
 
@@ -46,8 +46,8 @@ void entry_point(CommandLine *cmd_line)
         String process_dir = string_path_pop(process_exe);
         string_list_pop_matches(&path_list, process_dir);
 
-        String pattern = string_lit("apache-maven");
-        mvn_path = string_list_find_first_match(&path_list, pattern);
+        mvn_path = platform_find_first_file(&arena, &path_list, PLATFORM_MVN_FILE);
+
     }
 
     if (string_is_empty(mvn_path)) {
@@ -55,7 +55,7 @@ void entry_point(CommandLine *cmd_line)
         return;
     }
 
-    String mvn_launcher = string_path_append(&arena, mvn_path, string_lit("mvn"));
+    String mvn_launcher = string_path_append(&arena, mvn_path, PLATFORM_MVN_FILE);
     if (!platform_file_exists(&arena, mvn_launcher)) {
         log_error("maven launcher not found @ {}", mvn_path);
         return;

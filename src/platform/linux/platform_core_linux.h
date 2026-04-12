@@ -27,6 +27,8 @@ typedef struct {
 #define PLATFORM_SHELL_NAME "/bin/sh"
 #define PLATFORM_SHELL_CMD_FLAG "-c"
 
+#define PLATFORM_MVN_FILE string_lit("mvn")
+
 #define platform_mem_equal(a, b, len) (memcmp(a, b, len) == 0)
 #define platform_mem_copy(d, s, len) memcpy(d, s, len)
 

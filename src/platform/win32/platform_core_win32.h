@@ -17,6 +17,8 @@ typedef struct {
 #define PLATFORM_SHELL_NAME "cmd"
 #define PLATFORM_SHELL_CMD_FLAG "/C"
 
+#define PLATFORM_MVN_FILE string_lit("mvn.cmd")
+
 #define platform_mem_equal(a, b, len) RtlEqualMemory(a, b, len)
 #define platform_mem_copy(d, s, len) RtlCopyMemory(d, s, len)
 

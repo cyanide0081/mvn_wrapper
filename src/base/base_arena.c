@@ -5,7 +5,6 @@ Arena arena_init(usize reserve_factor, usize commit)
     usize committed = align_forward_size(commit, page_size);
     void *memory = platform_mem_reserve(NULL, reserved);
     if (memory == NULL) {
-        // TODO(cya): error handling?
         reserved = 0;
         committed = 0;
     } else {
