@@ -245,10 +245,8 @@ inline char **string_list_to_cstrings(Arena *arena, StringList *list, int *out_l
 {
     usize len = list->node_count;
     char **result = arena_push_array(arena, len + 1, char*);
-    StringNode *node = list->first;
-    for (usize i = 0; i < len; i++) {
-        result[i] = string_to_cstring(arena, node->str);
-        node = node->next;
+    string_list_foreach(list, str) {
+        result[i] = string_to_cstring(arena, str);
     }
 
     *out_len = len;
@@ -292,64 +290,52 @@ inline String string_list_pop_front(StringList *list)
 
 inline String string_list_find_first_match(StringList *list, String needle)
 {
-    String result = {0};
-    StringNode *node = list->first;
-    for (usize i = 0; i < list->node_count; i++) {
-        String str = node->str;
+    string_list_foreach(list, str) {
         if (string_contains(str, needle)) {
-            result = str;
-            break;
+            return str;
         }
-
-        node = node->next;
     }
 
-    return result;
+    return string_lit("");
 }
 
 inline void string_list_pop_matches(StringList *list, String needle)
 {
     StringNode *prev = NULL;
-    StringNode *curr = list->first;
-    for (usize i = 0; i < list->node_count; i++) {
-        String str = curr->str;
+    string_list_foreach(list, str) {
         if (string_contains(str, needle)) {
             list->node_count -= 1;
-            if (curr == list->first) {
-                list->first->next = curr->next;
+            if (node == list->first) {
+                list->first->next = node->next;
             } else {
-                prev->next = curr->next;
-                if (curr == list->last) {
+                prev->next = node->next;
+                if (node == list->last) {
                     list->last = prev;
                 }
             }
         }
 
-        prev = curr;
-        curr = curr->next;
+        prev = node;
     }
 }
 
 String string_list_join(Arena *arena, StringList *list, String delim)
 {
     if (list->node_count == 0) {
-        return (String){0};
+        return string_lit("");
     }
 
     usize total_len = list->total_len + (delim.len * (list->node_count - 1));
     u8 *buf = arena_push(arena, total_len + 1);
     u8 *cur = buf;
-    StringNode *cur_node = list->first;
-    for (usize i = 0; i < list->node_count; i++) {
-        String str = cur_node->str;
+    string_list_foreach(list, str) {
         usize len = str.len;
         mem_copy(cur, str.str, str.len);
-        if (delim.len > 0 && cur_node != list->last) {
+        if (delim.len > 0 && node != list->last) {
             mem_copy(&cur[len], delim.str, delim.len);
             len += delim.len;
         }
 
-        cur_node = cur_node->next;
         cur += len;
     }
 

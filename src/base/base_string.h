@@ -28,14 +28,15 @@ typedef struct {
 
 #define string16_create(s, l) ((String16){.len = (usize)l, .str = (u16*)s})
 
+// NOTE(cya): yeah
 #define string_list_foreach(l, s) \
-    usize i_; \
+    usize i; \
     StringNode *node; \
     String s; \
     for ( \
-        i_ = 0, node = (l)->first, s = node->str; \
-        i_ < (l)->node_count; \
-        i_++, node = node->next, s = node->str \
+        i = 0, node = (l)->first, s = node->str; \
+        i < (l)->node_count; \
+        i++, node = node->next, s = node->str \
     )
 
 internal String string_from_cstring(const char *str);
