@@ -9,7 +9,7 @@
 
 inline String platform_find_first_file(Arena *arena, StringList *path_list, String file)
 {
-    string_list_foreach(path_list, path) {
+    string_list_foreach(path_list, node, path, i) {
         String full_path = string_path_append(arena, path, file);
         if (platform_file_exists(arena, full_path)) {
             return path;

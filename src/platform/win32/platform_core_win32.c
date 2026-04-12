@@ -165,7 +165,7 @@ inline Process platform_process_spawn(Arena *arena, CommandLine *cmd_line)
 {
     // NOTE(cya): windows expects a single command-line string
     string_list_push_front(arena, cmd_line->arguments, cmd_line->exe_name);
-    string_list_foreach(cmd_line->arguments, argument) {
+    string_list_foreach(cmd_line->arguments, node, argument, i) {
         String escaped = command_line_escape_string(arena, argument);
         cmd_line->arguments->total_len += (escaped.len - argument.len);
         node->str = escaped;
