@@ -39,7 +39,7 @@
 #    define COMPILER_GCC
 
 #    if defined(__linux__) || defined(__gnu_linux__)
-#        define PLATFORM_WINDOWS
+#        define PLATFORM_LINUX
 #    else
 #        error unsupported compiler/platform combo
 #    endif

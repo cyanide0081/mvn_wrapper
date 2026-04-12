@@ -1,5 +1,25 @@
-#define PERM_READ bit_flag(0)
-#define PERM_WRITE bit_flag(1)
+inline usize platform_get_page_size(void)
+{
+    SYSTEM_INFO info = {0};
+    GetSystemInfo(&info);
+    return info.dwPageSize;
+}
+
+inline void *platform_mem_reserve(void *addr, usize size)
+{
+    return VirtualAlloc(addr, size, MEM_RESERVE, PAGE_READWRITE);
+}
+
+inline void *platform_mem_commit(void *addr, usize size)
+{
+    return VirtualAlloc(addr, size, MEM_COMMIT, PAGE_READWRITE);
+}
+
+inline void platform_mem_release(void *addr, usize size)
+{
+    (void)size; // NOTE(cya): windows doesn't use it
+    VirtualFree(addr, 0, MEM_RELEASE);
+}
 
 #define win32_wide_char_to_multi_byte(str, len, out_str, out_len) \
     (usize)WideCharToMultiByte( \
@@ -43,51 +63,6 @@ internal inline String16 win32_utf16_from_utf8(Arena *arena, String s)
     return string16_create(str_utf16, len_utf16);
 }
 
-inline usize platform_get_page_size(void)
-{
-    SYSTEM_INFO info = {0};
-    GetSystemInfo(&info);
-    return info.dwPageSize;
-}
-
-inline void *platform_mem_reserve(void *addr, usize size)
-{
-    return VirtualAlloc(addr, size, MEM_RESERVE, PAGE_READWRITE);
-}
-
-inline void *platform_mem_commit(void *addr, usize size)
-{
-    return VirtualAlloc(addr, size, MEM_COMMIT, PAGE_READWRITE);
-}
-
-inline void platform_mem_protect(void *addr, usize size, u8 flags)
-{
-    u32 old_protect;
-    u32 read = flags & PERM_READ;
-    u32 write = flags & PERM_WRITE;
-    VirtualProtect(addr, size, read | write, (DWORD*)&old_protect);
-}
-
-inline String platform_get_command_line(Arena *arena)
-{
-    String16 command_line_utf16 = string16_from_wcstring(GetCommandLineW());
-    return win32_utf8_from_utf16(arena, command_line_utf16);
-}
-
-String platform_get_env(Arena *arena, String var)
-{
-    String16 var_utf16 = win32_utf16_from_utf8(arena, var);
-    DWORD str_size_utf16 = GetEnvironmentVariableW(var_utf16.str, NULL, 0);
-    u16 *str_utf16 = arena_push_array(arena, str_size_utf16, u16);
-    usize len_utf16 = GetEnvironmentVariableW(
-        var_utf16.str,
-        str_utf16,
-        str_size_utf16
-    );
-
-    return win32_utf8_from_utf16(arena, string16_create(str_utf16, len_utf16));
-}
-
 String platform_get_process_filename(Arena *arena)
 {
     usize len;
@@ -110,13 +85,18 @@ String platform_get_process_filename(Arena *arena)
     return win32_utf8_from_utf16(arena, filename_16);
 }
 
-inline File platform_get_std_file(u32 descriptor, b32 handle_only)
+String platform_get_env(Arena *arena, String key)
 {
-    void *handle = GetStdHandle(descriptor);
-    return (File){
-        .handle = handle,
-        .size = handle_only ? 0 : platform_file_size(handle),
-    };
+    String16 key_utf16 = win32_utf16_from_utf8(arena, key);
+    DWORD var_size_utf16 = GetEnvironmentVariableW(key_utf16.str, NULL, 0);
+    u16 *var_utf16 = arena_push_array(arena, var_size_utf16, u16);
+    usize len_utf16 = GetEnvironmentVariableW(
+        key_utf16.str,
+        var_utf16,
+        var_size_utf16
+    );
+
+    return win32_utf8_from_utf16(arena, string16_create(var_utf16, len_utf16));
 }
 
 inline void platform_set_env(Arena *arena, String key, String val)
@@ -124,6 +104,17 @@ inline void platform_set_env(Arena *arena, String key, String val)
     String16 key_utf16 = win32_utf16_from_utf8(arena, key);
     String16 val_utf16 = win32_utf16_from_utf8(arena, val);
     SetEnvironmentVariableW(key_utf16.str, val_utf16.str);
+}
+
+internal inline usize win32_file_size(void *handle)
+{
+    if (handle == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+
+    DWORD size_lo = 0, size_hi = 0;
+    size_lo = GetFileSize(handle, &size_hi);
+    return size_lo == INVALID_FILE_SIZE ? 0 : size_lo | size_hi;
 }
 
 File platform_file_open(Arena *arena, String path)
@@ -141,15 +132,8 @@ File platform_file_open(Arena *arena, String path)
 
     return (File){
         .handle = handle,
-        .size = handle == INVALID_HANDLE_VALUE ? 0 : platform_file_size(handle),
+        .size = win32_file_size(handle),
     };
-}
-
-inline usize platform_file_size(void *handle)
-{
-    DWORD size_lo = 0, size_hi = 0;
-    size_lo = GetFileSize(handle, &size_hi);
-    return size_lo == INVALID_FILE_SIZE ? 0 : size_lo | size_hi;
 }
 
 b32 platform_file_close(File file)
@@ -167,7 +151,7 @@ b32 platform_file_exists(Arena *arena, String path)
 inline String platform_file_read_into_string(Arena *arena, File file)
 {
     usize size = file.size;
-    u8 *buf = arena_push(arena, size + 1);
+    u8 *buf = arena_push(arena, size);
     ReadFile(file.handle, buf, (DWORD)size, NULL, NULL);
     return string_create(buf, size);
 }
@@ -177,8 +161,13 @@ inline void platform_file_write_string(File file, String s)
     WriteFile(file.handle, s.str, (DWORD)s.len, NULL, NULL);
 }
 
-inline Process platform_process_spawn(Arena *arena, String args)
+inline Process platform_process_spawn(Arena *arena, CommandLine *cmd_line)
 {
+    // NOTE(cya): windows expects a single command-line string
+    string_list_push_front(arena, cmd_line->arguments, cmd_line->exe_name);
+    string_list_for_each(arena, cmd_line->arguments, command_line_escape_string);
+    String args = string_list_join(arena, cmd_line->arguments, string_lit(" "));
+
     String16 args_utf16 = win32_utf16_from_utf8(arena, args);
     PROCESS_INFORMATION process_info = {0};
     STARTUPINFOW startup_info = {.cb = sizeof(startup_info)};
@@ -194,14 +183,21 @@ inline Process platform_process_spawn(Arena *arena, String args)
         &startup_info,
         &process_info
     );
-    return (Process){
-        .handle = process_info.hProcess,
-    };
+    return (Process){.handle = process_info.hProcess};
 }
 
-inline void platform_process_await(Process process)
+inline b32 platform_process_failed(Process process)
 {
-    WaitForSingleObject(process.handle, INFINITE);
+    return process.handle == INVALID_HANDLE_VALUE;
+}
+
+inline b32 platform_process_await(Process process)
+{
+    if (platform_process_failed(process)) {
+        return false;
+    }
+
+    return WaitForSingleObject(process.handle, INFINITE) != WAIT_FAILED;
 }
 
 thread_local u16 __win32_error_buf[4096];
@@ -234,4 +230,23 @@ String platform_get_error_message(u64 error_code)
 
     String result =  win32_utf8_from_utf16(&arena, string16_create(msg, msg_len));
     return string_trim_trailing(result);
+}
+
+// NOTE(cya): windows's wide entry point for unicode strings
+int wmain(int argc, wchar_t *argv[])
+{
+    __platform_std_files[STDIN].handle = GetStdHandle(STD_INPUT_HANDLE);
+    __platform_std_files[STDOUT].handle = GetStdHandle(STD_OUTPUT_HANDLE);
+    __platform_std_files[STDERR].handle = GetStdHandle(STD_ERROR_HANDLE);
+
+    Arena arguments_arena = arena_init(32, kibibytes(32));
+    StringList arguments = {0};
+    for (int i = 0; i < argc; i++) {
+        String16 argument_16 = string16_from_wcstring(argv[i]);
+        String argument = win32_utf8_from_utf16(&arguments_arena, argument_16);
+        string_list_push_back(&arguments_arena, &arguments, argument);
+    }
+
+    CommandLine cmd_line = command_line_from_string_list(&arguments);
+    entry_point(&cmd_line);
 }

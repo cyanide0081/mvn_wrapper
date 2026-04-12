@@ -3,6 +3,7 @@
 *.obj
 *.pdb
 *.rdi
+mvn
 
 # java directory for testing
 java/**

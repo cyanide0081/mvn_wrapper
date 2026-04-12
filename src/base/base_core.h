@@ -1,4 +1,5 @@
-#include <stdint.h>
+#include <stdarg.h> // va_args
+#include <stdint.h> // sized integers
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -27,11 +28,16 @@ typedef i32 b32;
 
 #define DEFAULT_ALIGN (uptr)(2 * sizeof(void*))
 
-#if defined(PLATFORM_WINDOWS)
+#if defined(COMPILER_MSVC) || (defined(COMPILER_CLANG) && defined(PLATFORM_WINDOWS))
 #    pragma section(".rdata$", read)
 #    define readonly __declspec(allocate(".rdata$"))
+#    define force_keep __declspec(selectany)
+#elif defined(COMPILER_CLANG)
+#    define readonly __attribute__((section(".rodata")))
+#    define force_keep __attribute__((used))
 #else
 #    define readonly
+#    define force_keep
 #endif
 
 #if defined(COMPILER_MSVC)
@@ -48,6 +54,10 @@ typedef i32 b32;
 #define mem_equal(d, s, len) platform_mem_equal(d, s, len)
 #define mem_copy(d, s, len) platform_mem_copy(d, s, len)
 #define bit_flag(n) (1 << (n))
+
+#define kibibytes(n) (1024 * (n))
+#define mebibytes(n) (1024 * kibibytes(n))
+#define gibibytes(n) (1024 * mebibytes(n))
 
 internal b32 is_power_of_two(uptr value);
 internal usize align_forward_size(usize value, usize align);

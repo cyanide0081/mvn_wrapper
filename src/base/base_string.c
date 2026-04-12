@@ -8,6 +8,14 @@ inline String16 string16_from_wcstring(const u16 *str)
     return string16_create(str, wcstring_len(str));
 }
 
+inline char *string_to_cstring(Arena *arena, String s)
+{
+    char *result = arena_push(arena, s.len + 1);
+    mem_copy(result, s.str, s.len);
+    result[s.len] = '\0';
+    return result;
+}
+
 inline b32 string_starts_with(String a, String b)
 {
     if (b.len > a.len) {
@@ -26,7 +34,9 @@ inline b32 string_starts_with(String a, String b)
 inline b32 string_contains(String haystack, String needle)
 {
     for (usize i = 0; i < haystack.len; i++) {
-        if (mem_equal(&haystack.str[i], needle.str, needle.len)) {
+        b32 found_match = haystack.str[i] == needle.str[0] &&
+            mem_equal(&haystack.str[i], needle.str, needle.len);
+        if (found_match) {
             return true;
         }
     }
@@ -62,8 +72,15 @@ inline String string_fmt_va(Arena *arena, const char *fmt, va_list va)
     usize cur = 0, i = 0;
     for (; fmt[i] != '\0'; i++) {
         if (fmt[i] == '{' && fmt[i + 1] == '}') {
+            if (i > 0 && fmt[i - 1] == '\\') {
+                continue;
+            }
+
             usize len = i - cur;
-            string_list_push_back(arena, &parts, string_create(&fmt[cur], len));
+            if (len > 0) {
+                string_list_push_back(arena, &parts, string_create(&fmt[cur], len));
+            }
+
             string_list_push_back(arena, &parts, va_arg(va, String));
 
             cur += len + 2;
@@ -98,6 +115,25 @@ String string_skip_nth_match(String s, String target, usize n)
     return string_create(&s.str[i], len - i);
 }
 
+b32 string_contains_whitespace(String s)
+{
+    for (usize i = 0; i < s.len; i++) {
+        if (char_is_whitespace(s.str[i])) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+inline String string_trunc(String s, usize len)
+{
+    return (String){
+        .len = min(s.len, len),
+        .str = s.str,
+    };
+}
+
 inline String string_cut_leading(String s, usize n)
 {
     usize i = min(n, s.len);
@@ -116,7 +152,7 @@ inline String string_trim_leading(String s)
 
 inline String string_trim_trailing(String s)
 {
-    usize i = s.len - 1;
+    isize i = s.len - 1;
     while (i >= 0 && char_is_whitespace(s.str[i])) {
         i -= 1;
     }
@@ -126,7 +162,7 @@ inline String string_trim_trailing(String s)
 
 inline String string_path_append(Arena *arena, String path, String elem)
 {
-    String separator = string_from_char(PLATFORM_PATH_SEPARATOR);
+    String separator = string_lit(PLATFORM_PATH_SEPARATOR);
     return string_fmt(arena, "{}{}{}", path, separator, elem);
 }
 
@@ -135,12 +171,12 @@ inline String string_path_pop(String path)
     usize i;
     for (i = path.len - 1; i > 0; i--) {
         char c = path.str[i];
-        if (c == PLATFORM_PATH_SEPARATOR) {
-            break;
+        if (c == PLATFORM_PATH_SEPARATOR[0]) {
+            return string_create(path.str, i);
         }
     }
 
-    return string_create(path.str, i);
+    return path;
 }
 
 readonly global u8 __SYMBOL_FROM_U8[10] = {
@@ -182,6 +218,13 @@ inline u64 string_parse_u64(String s)
     return val;
 }
 
+inline StringNode *string_node_create(Arena *arena, String s)
+{
+    StringNode *result = arena_push_array(arena, 1, StringNode);
+    result->str = s;
+    return result;
+}
+
 StringList string_split(Arena *arena, String s, String delims)
 {
     StringList result = {0};
@@ -198,10 +241,24 @@ StringList string_split(Arena *arena, String s, String delims)
     return result;
 }
 
+inline char **string_list_to_cstrings(Arena *arena, StringList *list, int *out_len)
+{
+    usize len = list->node_count;
+    char **result = arena_push_array(arena, len + 1, char*);
+    StringNode *node = list->first;
+    for (usize i = 0; i < len; i++) {
+        result[i] = string_to_cstring(arena, node->str);
+        node = node->next;
+    }
+
+    *out_len = len;
+    result[len] = NULL;
+    return result;
+}
+
 inline void string_list_push_back(Arena *arena, StringList *list, String s)
 {
-    StringNode *node = arena_push_array(arena, 1, StringNode);
-    node->str = s;
+    StringNode *node = string_node_create(arena, s);
     if (list->first == NULL) {
         list->first = node;
     } else {
@@ -211,6 +268,26 @@ inline void string_list_push_back(Arena *arena, StringList *list, String s)
     list->node_count += 1;
     list->total_len += s.len;
     list->last = node;
+}
+
+inline void string_list_push_front(Arena *arena, StringList *list, String s)
+{
+    StringNode *node = string_node_create(arena, s);
+    list->node_count += 1;
+    list->total_len += s.len;
+    node->next = list->first;
+    list->first = node;
+}
+
+inline String string_list_pop_front(StringList *list)
+{
+    String result = list->first->str;
+
+    list->node_count -= 1;
+    list->total_len -= result.len;
+    list->first = list->first->next;
+
+    return result;
 }
 
 inline String string_list_find_first_match(StringList *list, String needle)
@@ -253,7 +330,7 @@ inline void string_list_pop_matches(StringList *list, String needle)
     }
 }
 
-inline String string_list_join(Arena *arena, StringList *list, String delim)
+String string_list_join(Arena *arena, StringList *list, String delim)
 {
     if (list->node_count == 0) {
         return (String){0};

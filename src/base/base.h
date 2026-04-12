@@ -7,5 +7,6 @@
 #include "base_arena.h"
 #include "base_string.h"
 #include "base_log.h"
+#include "base_command_line.h"
 
 #endif // BASE_H

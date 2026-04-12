@@ -1,7 +1,7 @@
-Arena arena_init(usize reserve, usize commit)
+Arena arena_init(usize reserve_factor, usize commit)
 {
     usize page_size = platform_get_page_size();
-    usize reserved = align_forward_size(reserve, page_size);
+    usize reserved = align_forward_size(reserve_factor * commit, page_size);
     usize committed = align_forward_size(commit, page_size);
     void *memory = platform_mem_reserve(NULL, reserved);
     if (memory == NULL) {
@@ -27,6 +27,11 @@ Arena arena_init_from_buffer(void *buffer, usize size)
         .committed = size,
         .memory = buffer,
     };
+}
+
+inline void arena_release(Arena *arena)
+{
+    platform_mem_release(arena->memory, arena->reserved);
 }
 
 void *arena_push(Arena *arena, usize size)
