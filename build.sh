@@ -2,7 +2,7 @@
 # supports Clang and GCC
 
 gcc --version > /dev/null 2>&1 && CC="gcc"
-clang --version > /dev/null 2>&1 && CC="clang"
+# clang --version > /dev/null 2>&1 && CC="clang"
 
 if [ "$CC" = "" ]; then
     echo "no suitable compiler found"

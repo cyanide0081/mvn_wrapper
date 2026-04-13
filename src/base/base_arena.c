@@ -19,15 +19,6 @@ Arena arena_init(usize reserve_factor, usize commit)
     };
 }
 
-Arena arena_init_from_buffer(void *buffer, usize size)
-{
-    return (Arena){
-        .reserved = size,
-        .committed = size,
-        .memory = buffer,
-    };
-}
-
 inline void arena_release(Arena *arena)
 {
     platform_mem_release(arena->memory, arena->reserved);
@@ -45,7 +36,7 @@ void *arena_push(Arena *arena, usize size)
         base_offset = (usize)(base_addr - memory);
     } else {
         usize committed = arena->committed;
-        if (base_offset > committed) {
+        if (base_offset + size > committed) {
             // TODO(cya): can we really be sure this will stay in-bounds?
             usize commit = align_forward(size, arena->block_size);
             void *commit_addr = (void*)(memory + (uptr)committed);
@@ -67,4 +58,15 @@ inline void arena_pop(Arena *arena, usize size)
 inline void arena_reset(Arena *arena)
 {
     arena->offset = 0;
+}
+
+inline void arena_log_stats(Arena *arena)
+{
+    String used = string_from_u64(arena, arena->offset);
+    String committed = string_from_u64(arena, arena->committed);
+    String reserved = string_from_u64(arena, arena->reserved);
+    String usage = string_from_u64(arena, 100 * arena->offset / arena->reserved);
+
+    const char *fmt = "memory usage: {}% [used={},committed={},reserved={}]";
+    log_debug(fmt, usage, used, committed, reserved);
 }

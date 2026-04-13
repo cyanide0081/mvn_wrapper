@@ -13,7 +13,7 @@ where /q "clang" && (
 
 if "%CC%" == "clang" (
     set "FLAGS=-o mvn.exe -std=c99 -Wall -Wextra -Wpedantic"
-    set "LFLAGS=-lmsvcrt -nostdlib -Wl,/NODEFAULTLIB:libcmt,/INCLUDE:PROGRAM_NAME"
+    set "LFLAGS=-lmsvcrt -ladvapi32 -lonecore -nostdlib -Wl,/NODEFAULTLIB:libcmt,/INCLUDE:PROGRAM_NAME"
     if "%~1" == "debug" (
         set "DFLAGS=-O0 -g -gcodeview"
     ) else (
@@ -21,7 +21,7 @@ if "%CC%" == "clang" (
     )
 ) else if "%CC%" == "cl" (
     set "FLAGS=/W3"
-    set "LFLAGS=msvcrt.lib /link /NODEFAULTLIB:libcmt /INCLUDE:PROGRAM_NAME /out:mvn.exe"
+    set "LFLAGS=msvcrt.lib advapi32.lib /link /NODEFAULTLIB:libcmt /INCLUDE:PROGRAM_NAME /out:mvn.exe"
     if "%~1" == "debug" (
         set "DFLAGS=/Od /Zi"
     ) else (

@@ -148,6 +148,56 @@ b32 platform_file_exists(Arena *arena, String path)
     return attributes != INVALID_FILE_ATTRIBUTES;
 }
 
+FileIter *platform_file_iter_begin(Arena *arena, String path)
+{
+    String path_with_wildcard = string_fmt(arena, "{}\\*", path);
+    String16 path_utf16 = win32_utf16_from_utf8(arena, path_with_wildcard);
+    FileIter *iter = arena_push_array(arena, 1, FileIter);
+    iter->handle = FindFirstFileExW(
+        (WCHAR*)path_utf16.str,
+        FindExInfoBasic,
+        &iter->find_data,
+        FindExSearchNameMatch,
+        0,
+        FIND_FIRST_EX_LARGE_FETCH
+    );
+    return iter;
+}
+
+b32 platform_file_iter_next(Arena *arena, FileIter *iter, FileInfo *info)
+{
+    if (iter->is_done) {
+        return false;
+    }
+
+    do {
+        WCHAR *filename = iter->find_data.cFileName;
+        if (filename[0] == '.') {
+            continue;
+        }
+
+        info->name = win32_utf8_from_utf16(arena, string16_from_wcstring(filename));
+        DWORD attributes = iter->find_data.dwFileAttributes;
+        if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
+            info->is_dir = true;
+        }
+
+        if (!FindNextFileW(iter->handle, &iter->find_data)) {
+            iter->is_done = true;
+        }
+
+        return true;
+    } while (FindNextFileW(iter->handle, &iter->find_data));
+
+    iter->is_done = true;
+    return false;
+}
+
+inline void platform_file_iter_end(FileIter *iter)
+{
+    FindClose(iter->handle);
+}
+
 inline String platform_file_read_into_string(Arena *arena, File file)
 {
     usize size = file.size;
@@ -165,7 +215,8 @@ inline Process platform_process_spawn(Arena *arena, CommandLine *cmd_line)
 {
     // NOTE(cya): windows expects a single command-line string
     string_list_push_front(arena, cmd_line->arguments, cmd_line->exe_name);
-    string_list_foreach(cmd_line->arguments, node, argument, i) {
+    string_list_foreach(cmd_line->arguments, node) {
+        String argument = node->str;
         String escaped = command_line_escape_string(arena, argument);
         cmd_line->arguments->total_len += (escaped.len - argument.len);
         node->str = escaped;
@@ -237,6 +288,38 @@ String platform_get_error_message(u64 error_code)
     return string_trim_trailing(result);
 }
 
+inline String platform_get_current_username(Arena *arena)
+{
+    u16 buf[UNLEN + 1];
+    DWORD buf_size = array_len(buf);
+    GetUserNameW(buf, &buf_size);
+
+    String16 curr_user = string16_create(buf, buf_size);
+    return win32_utf8_from_utf16(arena, curr_user);
+}
+
+readonly global char *HOME_ENVS[] = {"USERPROFILE", "HOME"};
+
+inline String platform_get_home_directory(Arena *arena)
+{
+    u16 *path;
+    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Profile, 0, NULL, &path))) {
+        String home = win32_utf8_from_utf16(arena, string16_from_wcstring(path));
+        CoTaskMemFree(path);
+        return home;
+    }
+
+    // NOTE(cya): environment vars fallback
+    for (usize i = 0; i < array_len(HOME_ENVS); i++) {
+        String home = platform_get_env(arena, string_lit(HOME_ENVS[i]));
+        if (!string_is_empty(home)) {
+            return home;
+        }
+    }
+
+    return string_lit("");
+}
+
 // NOTE(cya): windows's wide entry point for unicode strings
 int wmain(int argc, wchar_t *argv[])
 {
@@ -244,14 +327,26 @@ int wmain(int argc, wchar_t *argv[])
     __platform_std_files[STDOUT].handle = GetStdHandle(STD_OUTPUT_HANDLE);
     __platform_std_files[STDERR].handle = GetStdHandle(STD_ERROR_HANDLE);
 
-    Arena arguments_arena = arena_init(32, kibibytes(32));
+    Arena arena = platform_init_main_arena();
+    if (arena.memory == NULL) {
+        return 1;
+    }
+
     StringList arguments = {0};
     for (int i = 0; i < argc; i++) {
         String16 argument_16 = string16_from_wcstring(argv[i]);
-        String argument = win32_utf8_from_utf16(&arguments_arena, argument_16);
-        string_list_push_back(&arguments_arena, &arguments, argument);
+        String argument = win32_utf8_from_utf16(&arena, argument_16);
+        string_list_push_back(&arena, &arguments, argument);
     }
 
+    log.arena = &arena;
+
     CommandLine cmd_line = command_line_from_string_list(&arguments);
-    entry_point(&cmd_line);
+    entry_point(&arena, &cmd_line);
+
+#if defined(BUILD_DEBUG)
+    arena_log_stats(&arena);
+#endif
+
+    return 0;
 }

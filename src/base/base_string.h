@@ -28,16 +28,8 @@ typedef struct {
 
 #define string16_create(s, l) ((String16){.len = (usize)l, .str = (u16*)s})
 
-// NOTE(cya): yeah
-#define string_list_foreach(l, n, s, i) \
-    usize i; \
-    StringNode *n; \
-    String s; \
-    for ( \
-        i = 0, n = (l)->first, s = n->str; \
-        i < (l)->node_count; \
-        i++, n = n->next, s = n->str \
-    )
+#define string_list_foreach(l, n) \
+    for (StringNode *(n) = (l)->first; (n) != NULL; (n) = (n)->next)
 
 internal String string_from_cstring(const char *str);
 internal String16 string16_from_wcstring(const u16 *str);
@@ -49,14 +41,15 @@ internal b32 string_contains(String haystack, String needle);
 internal String string_keep_number(String s);
 internal String string_fmt(Arena *arena, const char *fmt, ...);
 internal String string_fmt_va(Arena *arena, const char *fmt, va_list va);
-internal String string_skip_first_match(String s, String target);
+internal String string_list_find_first_match(StringList *list, StringList *needles);
 internal String string_skip_nth_match(String s, String target, usize n);
 internal String string_trunc(String s, usize len);
 internal String string_cut_leading(String s, usize n);
 internal String string_trim_leading(String s);
 internal String string_trim_trailing(String s);
 internal String string_path_append(Arena *arena, String path, String elem);
-internal String string_path_pop(String path);
+internal String string_path_get_last_element(String path);
+internal String string_path_pop_element(String path);
 internal String string_from_u64(Arena *arena, u64 val);
 internal u64 string_parse_u64(String s);
 
@@ -64,9 +57,10 @@ internal StringNode *string_node_create(Arena *arena, String s);
 internal StringList string_split(Arena *arena, String s, String delims);
 internal char **string_list_to_cstrings(Arena *arena, StringList *list, int *out_len);
 
+internal void string_list_push_node_back(StringList *list, StringNode *node);
+internal void string_list_push_node_front(StringList *list, StringNode *node);
 internal void string_list_push_back(Arena *arena, StringList *list, String s);
 internal void string_list_push_front(Arena *arena, StringList *list, String s);
 internal String string_list_pop_front(StringList *list);
-internal String string_list_find_first_match(StringList *list, String needle);
 internal void string_list_pop_matches(StringList *list, String needle);
 internal String string_list_join(Arena *arena, StringList *list, String delim);

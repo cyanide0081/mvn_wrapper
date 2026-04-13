@@ -1,5 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <lmcons.h> // UNLEN
+#include <shlobj.h> // SHGetKnownFolderPath
 
 typedef struct {
     usize size;
@@ -9,6 +11,12 @@ typedef struct {
 typedef struct {
     void *handle;
 } Process;
+
+typedef struct {
+    HANDLE handle;
+    WIN32_FIND_DATAW find_data;
+    b32 is_done;
+} FileIter;
 
 #define PLATFORM_PATH_SEPARATOR "\\"
 #define PLATFORM_LINE_SEPARATOR "\r\n"

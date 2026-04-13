@@ -35,7 +35,7 @@ String platform_get_process_filename(Arena *arena)
 
 String platform_get_env(Arena *arena, String key)
 {
-    (void)arena; // NOTE(cya): no need to allocate in POSIX
+    unused(arena); // NOTE(cya): no need to allocate in POSIX
 
     char **variables = __environ;
     while (*variables != NULL) {
@@ -159,19 +159,39 @@ String platform_get_error_message(u64 error_code)
     return string_from_cstring(msg);
 }
 
+inline String platform_get_current_username(Arena *arena)
+{
+    return platform_get_env(arena, string_lit("LOGNAME"));
+}
+
+inline String platform_get_home_directory(Arena *arena)
+{
+    return platform_get_env(arena, string_lit("HOME"));
+}
+
 int main(int argc, char *argv[])
 {
     __platform_std_files[STDIN].descriptor = STDIN;
     __platform_std_files[STDOUT].descriptor = STDOUT;
     __platform_std_files[STDERR].descriptor = STDERR;
 
-    Arena arguments_arena = arena_init(32, kibibytes(32));
+    Arena arena = platform_init_main_arena();
+    if (arena.memory == NULL) {
+        return 1;
+    }
+
     StringList arguments = {0};
     for (int i = 0; i < argc; i++) {
         String argument = string_from_cstring(argv[i]);
-        string_list_push_back(&arguments_arena, &arguments, argument);
+        string_list_push_back(&arena, &arguments, argument);
     }
 
+    log.arena = &arena;
+
     CommandLine cmd_line = command_line_from_string_list(&arguments);
-    entry_point(&cmd_line);
+    entry_point(&arena, &cmd_line);
+
+#if defined(BUILD_DEBUG)
+    arena_log_stats(&arena);
+#endif
 }

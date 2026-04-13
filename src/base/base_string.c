@@ -92,7 +92,7 @@ inline String string_fmt_va(Arena *arena, const char *fmt, va_list va)
     return string_list_join(arena, &parts, string_lit(""));
 }
 
-inline String string_skip_first_match(String s, String target)
+String string_skip_first_match(String s, String target)
 {
     return string_skip_nth_match(s, target, 1);
 }
@@ -166,17 +166,28 @@ inline String string_path_append(Arena *arena, String path, String elem)
     return string_fmt(arena, "{}{}{}", path, separator, elem);
 }
 
-inline String string_path_pop(String path)
+inline String string_path_get_last_element(String path)
 {
-    usize i;
-    for (i = path.len - 1; i > 0; i--) {
-        char c = path.str[i];
-        if (c == PLATFORM_PATH_SEPARATOR[0]) {
-            return string_create(path.str, i);
+    for (usize i = 0; i < path.len; i++) {
+        usize index = path.len - i - 1;
+        if (PLATFORM_PATH_SEPARATOR[0] == path.str[index]) {
+            return string_create(&path.str[index + 1], i);
         }
     }
 
-    return path;
+    return string_lit("");
+}
+
+inline String string_path_pop_element(String path)
+{
+    for (usize i = 0; i < path.len; i++) {
+        usize index = path.len - i - 1;
+        if (PLATFORM_PATH_SEPARATOR[0] == path.str[index]) {
+            return string_create(path.str, index);
+        }
+    }
+
+    return string_lit("");
 }
 
 readonly global u8 __SYMBOL_FROM_U8[10] = {
@@ -245,8 +256,10 @@ inline char **string_list_to_cstrings(Arena *arena, StringList *list, int *out_l
 {
     usize len = list->node_count;
     char **result = arena_push_array(arena, len + 1, char*);
-    string_list_foreach(list, node, str, i) {
-        result[i] = string_to_cstring(arena, str);
+    usize i = 0;
+    string_list_foreach(list, node) {
+        String str = node->str;
+        result[i++] = string_to_cstring(arena, str);
     }
 
     *out_len = len;
@@ -254,45 +267,56 @@ inline char **string_list_to_cstrings(Arena *arena, StringList *list, int *out_l
     return result;
 }
 
+inline void string_list_push_node_back(StringList *list, StringNode *node)
+{
+    sll_queue_push_back(list->first, list->last, node);
+    list->node_count += 1;
+    list->total_len += node->str.len;
+}
+
+inline void string_list_push_node_front(StringList *list, StringNode *node)
+{
+    sll_queue_push_front(list->first, list->last, node);
+    list->node_count += 1;
+    list->total_len += node->str.len;
+}
+
 inline void string_list_push_back(Arena *arena, StringList *list, String s)
 {
-    StringNode *node = string_node_create(arena, s);
-    if (list->first == NULL) {
-        list->first = node;
-    } else {
-        list->last->next = node;
-    }
 
-    list->node_count += 1;
-    list->total_len += s.len;
-    list->last = node;
+    StringNode *node = string_node_create(arena, s);
+    string_list_push_node_back(list, node);
 }
 
 inline void string_list_push_front(Arena *arena, StringList *list, String s)
 {
     StringNode *node = string_node_create(arena, s);
-    list->node_count += 1;
-    list->total_len += s.len;
-    node->next = list->first;
-    list->first = node;
+    string_list_push_node_front(list, node);
 }
 
 inline String string_list_pop_front(StringList *list)
 {
-    String result = list->first->str;
+    if (list->node_count == 0) {
+        return string_lit("");
+    }
 
+    String result = list->first->str;
     list->node_count -= 1;
     list->total_len -= result.len;
-    list->first = list->first->next;
+    sll_queue_pop_front(list->first, list->last);
 
     return result;
 }
 
-inline String string_list_find_first_match(StringList *list, String needle)
+inline String string_list_find_first_match(StringList *list, StringList *needles)
 {
-    string_list_foreach(list, node, str, i) {
-        if (string_contains(str, needle)) {
-            return str;
+    string_list_foreach(list, node) {
+        String str = node->str;
+        string_list_foreach(needles, needle_node) {
+            String needle = needle_node->str;
+            if (string_contains(str, needle)) {
+                return str;
+            }
         }
     }
 
@@ -302,11 +326,12 @@ inline String string_list_find_first_match(StringList *list, String needle)
 inline void string_list_pop_matches(StringList *list, String needle)
 {
     StringNode *prev = NULL;
-    string_list_foreach(list, node, str, i) {
+    string_list_foreach(list, node) {
+        String str = node->str;
         if (string_contains(str, needle)) {
             list->node_count -= 1;
             if (node == list->first) {
-                list->first->next = node->next;
+                sll_queue_pop_front(list->first, list->last);
             } else {
                 prev->next = node->next;
                 if (node == list->last) {
@@ -328,7 +353,8 @@ String string_list_join(Arena *arena, StringList *list, String delim)
     usize total_len = list->total_len + (delim.len * (list->node_count - 1));
     u8 *buf = arena_push(arena, total_len + 1);
     u8 *cur = buf;
-    string_list_foreach(list, node, str, i) {
+    string_list_foreach(list, node) {
+        String str = node->str;
         usize len = str.len;
         mem_copy(cur, str.str, str.len);
         if (delim.len > 0 && node != list->last) {

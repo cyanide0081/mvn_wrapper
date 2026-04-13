@@ -1,5 +1,3 @@
-thread_local u8 __msg_buf[4096];
-
 #if defined(BUILD_DEBUG)
 void assert_handle(
     const char *_prefix,
@@ -9,7 +7,11 @@ void assert_handle(
     const char *_msg,
     ...
 ) {
-    Arena arena = arena_init_from_buffer(__msg_buf, array_len(__msg_buf));
+    if (log.arena == NULL) {
+        return;
+    }
+
+    Arena *arena = log.arena;
     String prefix = string_lit(_prefix);
     String cond = string_lit(_cond);
     String file = string_lit(_file);
@@ -18,13 +20,13 @@ void assert_handle(
     if (_msg != NULL) {
         va_list va;
         va_start(va, _msg);
-        msg = string_fmt(&arena, _msg, va);
+        msg = string_fmt(arena, _msg, va);
         va_end(va);
     }
 
     String postfix = {0};
     if (_cond != NULL) {
-        postfix = string_fmt(&arena, ": `{}`", cond);
+        postfix = string_fmt(arena, ": `{}`", cond);
     }
 
     log_error("{}({}): {}{} {}", file, line, prefix, postfix, msg);

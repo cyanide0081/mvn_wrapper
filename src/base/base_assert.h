@@ -22,7 +22,7 @@
          } \
          } noop()
 #else
-#    define assert_msg(cond, ...) (void)(cond)
+#    define assert_msg(cond, ...) unused(cond)
 #endif
 
 #define assert(cond) assert_msg(cond, NULL)

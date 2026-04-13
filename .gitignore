@@ -1,5 +1,6 @@
 # build and debugger artifacts
 *.exe
+*.ilk
 *.obj
 *.pdb
 *.rdi
