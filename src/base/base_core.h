@@ -47,6 +47,7 @@ typedef i32 b32;
 #endif
 
 #define noop() ((void)0)
+#define unused(x) (void)sizeof(x)
 #define stringify(x) #x
 #define min(a, b) ((a) > (b) ? (b) : (a))
 #define max(a, b) ((a) > (b) ? (a) : (b))
@@ -54,12 +55,32 @@ typedef i32 b32;
 #define mem_equal(d, s, len) platform_mem_equal(d, s, len)
 #define mem_copy(d, s, len) platform_mem_copy(d, s, len)
 #define bit_flag(n) (1 << (n))
+#define is_power_of_two(v) (((v) & ((v) - 1)) == 0)
 
 #define kibibytes(n) (1024 * (n))
 #define mebibytes(n) (1024 * kibibytes(n))
 #define gibibytes(n) (1024 * mebibytes(n))
 
-internal b32 is_power_of_two(uptr value);
+#define check_null(v) ((v) == NULL)
+#define set_null(v) ((v) = NULL)
+
+// NOTE(cya): singly-linked, doubly-headed lists -> queues
+#define sll_queue_push_back(f, l, n) ( \
+    check_null(f) ? \
+        ((f) = (l) = (n), set_null((n)->next)) : \
+        ((l)->next = (n), (l) = (n), set_null((n)->next)) \
+)
+#define sll_queue_push_front(f, l, n) ( \
+    check_null(f) ? \
+        ((f) = (l) = (n), set_null((n)->next)) : \
+        ((n)->next = (f), (f) = (n)) \
+)
+#define sll_queue_pop_front(f, l) ( \
+    ((f) == (l)) ? \
+        (set_null(f), set_null(l)) : \
+        ((f) = (f)->next) \
+)
+
 internal usize align_forward_size(usize value, usize align);
 internal uptr align_forward(uptr value, uptr align);
 

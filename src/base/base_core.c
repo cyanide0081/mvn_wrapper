@@ -1,8 +1,3 @@
-b32 is_power_of_two(uptr value)
-{
-    return (value & (value - 1)) == 0;
-}
-
 inline usize align_forward_size(usize value, usize align)
 {
     return align_forward((uptr)value, (uptr)align);
