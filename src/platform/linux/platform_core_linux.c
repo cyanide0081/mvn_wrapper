@@ -198,7 +198,9 @@ String platform_get_error_message(u64 error_code)
 
 inline String platform_get_current_username(Arena *arena)
 {
-    return platform_get_env(arena, string_lit("LOGNAME"));
+    String username = string_from_cstring(getlogin());
+    return !string_is_empty(username) ? username :
+        platform_get_env(arena, string_lit("LOGNAME"));
 }
 
 inline String platform_get_home_directory(Arena *arena)
