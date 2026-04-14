@@ -37,7 +37,7 @@ void entry_point(Arena *arena, CommandLine *cmd_line)
     String mvn_path = string_lit("");
     if (!string_is_empty(maven_home)) {
         log_info("using maven from MAVEN_HOME");
-        mvn_path = string_path_append(arena, maven_home, PLATFORM_MVN_FILE);
+        mvn_path = string_path_append(arena, maven_home, string_lit("bin"));
     } else {
         log_info("using maven from PATH");
 
@@ -72,7 +72,7 @@ void entry_point(Arena *arena, CommandLine *cmd_line)
 
             String target_tag = string_lit("<maven.compiler.target>");
             String pos = string_skip_first_match(pom, target_tag);
-            
+
             version = string_keep_number(pos);
             pom_file = path;
         }
