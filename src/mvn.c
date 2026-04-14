@@ -28,7 +28,7 @@ void entry_point(Arena *arena, CommandLine *cmd_line)
 
     String curr_user = platform_get_current_username(arena);
     String home = platform_get_home_directory(arena);
-    log_debug("user: {} home: {}", curr_user, home);
+    log_debug("[user={},home={}]", curr_user, home);
 
     String maven_home = platform_get_env(arena, string_lit("MAVEN_HOME"));
     String path = platform_get_env(arena, string_lit("PATH"));
@@ -61,6 +61,7 @@ void entry_point(Arena *arena, CommandLine *cmd_line)
     }
 
     String version = string_lit("");
+    String pom_file = string_lit("");
     for (usize i = 0; i < array_len(POM_DIRS) && string_is_empty(version); i++) {
         String dir = string_from_cstring(POM_DIRS[i]);
         String path = string_path_append(arena, dir, string_lit("pom.xml"));
@@ -71,7 +72,9 @@ void entry_point(Arena *arena, CommandLine *cmd_line)
 
             String target_tag = string_lit("<maven.compiler.target>");
             String pos = string_skip_first_match(pom, target_tag);
+            
             version = string_keep_number(pos);
+            pom_file = path;
         }
     }
 
@@ -79,7 +82,7 @@ void entry_point(Arena *arena, CommandLine *cmd_line)
     if (string_is_empty(version)) {
         log_warn("no JDK target property found (using JAVA_HOME)");
     } else {
-        log_info("found JDK {} target in pom.xml", version);
+        log_info("found JDK {} target @ {}", version, pom_file);
 
         // NOTE(cya): prepend dirs from known install locations
         for (usize i = 0; i < array_len(JDK_DIRS); i++) {

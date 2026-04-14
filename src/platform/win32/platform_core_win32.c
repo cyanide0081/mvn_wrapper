@@ -176,11 +176,9 @@ b32 platform_file_iter_next(Arena *arena, FileIter *iter, FileInfo *info)
             continue;
         }
 
-        info->name = win32_utf8_from_utf16(arena, string16_from_wcstring(filename));
         DWORD attributes = iter->find_data.dwFileAttributes;
-        if (attributes & FILE_ATTRIBUTE_DIRECTORY) {
-            info->is_dir = true;
-        }
+        info->name = win32_utf8_from_utf16(arena, string16_from_wcstring(filename));
+        info->is_dir = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 
         if (!FindNextFileW(iter->handle, &iter->find_data)) {
             iter->is_done = true;

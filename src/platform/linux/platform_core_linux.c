@@ -71,9 +71,9 @@ internal inline usize linux_file_size(i32 descriptor)
         return 0;
     }
 
-    struct stat stat;
-    fstat(descriptor, &stat);
-    return stat.st_size;
+    struct stat st;
+    fstat(descriptor, &st);
+    return st.st_size;
 }
 
 File platform_file_open(Arena *arena, String path)
@@ -101,6 +101,43 @@ inline String platform_file_read_into_string(Arena *arena, File file)
     u8 *buf = arena_push(arena, size);
     read(file.descriptor, buf, size);
     return string_create(buf, size);
+}
+
+FileIter *platform_file_iter_begin(Arena *arena, String path)
+{
+    FileIter *iter = arena_push_array(arena, 1, FileIter);
+    iter->dir = opendir(string_to_cstring(arena, path));
+    return iter;
+}
+
+b32 platform_file_iter_next(Arena *arena, FileIter *iter, FileInfo *info)
+{
+    unused(arena);
+    
+    while (iter->dir != NULL) {
+        iter->entry = readdir(iter->dir);
+        if (iter->entry == NULL) {
+            break;
+        } else if (iter->entry->d_name[0] == '.') {
+            continue;
+        }
+        
+        const char *name = iter->entry->d_name;
+        struct stat st;
+        stat(name, &st);
+        
+        info->name = string_from_cstring(iter->entry->d_name);
+        info->is_dir = (st.st_mode & S_IFMT) == S_IFDIR;
+        return true;
+    }
+
+    iter->is_done = true;
+    return false;
+}
+
+void platform_file_iter_end(FileIter *iter)
+{
+    closedir(iter->dir);
 }
 
 inline void platform_file_write_string(File file, String s)

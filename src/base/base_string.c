@@ -46,15 +46,13 @@ inline b32 string_contains(String haystack, String needle)
 
 inline String string_keep_number(String s)
 {
-    usize i;
-    for (i = 0; i < s.len; i++) {
-        if (!char_is_digit(s.str[i])) {
-            break;
-        }
-    }
+    usize i = 0;
+    for (; i < s.len && !char_is_digit(s.str[i]); i++) {}
 
-    s.len = i;
-    return s;
+    usize j = i;
+    for (; j < s.len && char_is_digit(s.str[j]); j++) {}
+    
+    return string_create(&s.str[i], j - i);
 }
 
 inline String string_fmt(Arena *arena, const char *fmt, ...)
