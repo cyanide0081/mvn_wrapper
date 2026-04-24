@@ -15,8 +15,7 @@ typedef struct {
 typedef struct {
     HANDLE handle;
     WIN32_FIND_DATAW find_data;
-    b32 is_done;
-} FileIter;
+} PlatformFileIter;
 
 #define PLATFORM_PATH_SEPARATOR "\\"
 #define PLATFORM_LINE_SEPARATOR "\r\n"

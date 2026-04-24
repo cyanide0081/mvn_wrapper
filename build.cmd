@@ -21,7 +21,7 @@ if "%CC%" == "clang" (
     )
 ) else if "%CC%" == "cl" (
     set "FLAGS=/W3"
-    set "LFLAGS=msvcrt.lib advapi32.lib /link /NODEFAULTLIB:libcmt /INCLUDE:PROGRAM_NAME /out:mvn.exe"
+    set "LFLAGS=msvcrt.lib advapi32.lib onecore.lib /link /NODEFAULTLIB:libcmt /INCLUDE:PROGRAM_NAME /out:mvn.exe"
     if "%~1" == "debug" (
         set "DFLAGS=/Od /Zi"
     ) else (

@@ -28,9 +28,9 @@
 #        error unsupported compiler/platform combo
 #    endif
 
-#    if defined(__amd64__) || defined(__amd64) || defined(__x86_64__) || defined(__x86_64)
+#    if defined(_M_AMD64)
 #        define ARCH_X64
-#    elif defined(__aarch64__)
+#    elif defined(_M_ARM64)
 #        define ARCH_ARM64
 #    else
 #        error unsupported architecture

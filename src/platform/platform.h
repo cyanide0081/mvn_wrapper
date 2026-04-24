@@ -12,12 +12,24 @@
 #define STDOUT 1
 #define STDERR 2
 
+global usize PLATFORM_PAGE_SIZE;
 global File __platform_std_files[3];
+
+typedef enum {
+    FILE_ITER_SKIP_DIRS = 1 << 0,
+    FILE_ITER_SKIP_FILES = 1 << 1,
+    FILE_ITER_SKIP_HIDDEN = 1 << 2,
+} FileIterFlags;
 
 typedef struct {
     String name;
-    b32 is_dir;
 } FileInfo;
+
+typedef struct {
+    u32 flags;
+    b32 is_done;
+    PlatformFileIter data;
+} FileIter;
 
 #define platform_get_std_file(d) __platform_std_files[(d)]
 
@@ -35,7 +47,7 @@ internal void platform_set_env(Arena *arena, String key, String value);
 internal File platform_file_open(Arena *arena, String path);
 internal b32 platform_file_close(File file);
 internal b32 platform_file_exists(Arena *arena, String path);
-internal FileIter *platform_file_iter_begin(Arena *arena, String path);
+internal FileIter *platform_file_iter_begin(Arena *arena, String path, u32 flags);
 internal b32 platform_file_iter_next(Arena *arena, FileIter *iter, FileInfo *info);
 internal void platform_file_iter_end(FileIter *iter);
 internal String platform_file_read_into_string(Arena *arena, File file);

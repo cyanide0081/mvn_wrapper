@@ -43,7 +43,7 @@ internal String string_fmt(Arena *arena, const char *fmt, ...);
 internal String string_fmt_va(Arena *arena, const char *fmt, va_list va);
 internal String string_list_find_first_match(StringList *list, StringList *needles);
 internal String string_skip_nth_match(String s, String target, usize n);
-internal String string_trunc(String s, usize len);
+internal String string_join(Arena *arena, String delim, String a, String b);
 internal String string_cut_leading(String s, usize n);
 internal String string_trim_leading(String s);
 internal String string_trim_trailing(String s);
