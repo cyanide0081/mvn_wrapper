@@ -150,14 +150,14 @@ b32 platform_file_exists(Arena *arena, String path)
 
 FileIter *platform_file_iter_begin(Arena *arena, String path, u32 flags)
 {
-    String path_with_wildcard = string_path_append(arena, path, "*");
+    String path_with_wildcard = string_path_append(arena, path, string_lit("*"));
     String16 path_utf16 = win32_utf16_from_utf8(arena, path_with_wildcard);
     FileIter *iter = arena_push_array(arena, 1, FileIter);
     iter->flags = flags;
     iter->data.handle = FindFirstFileExW(
         (WCHAR*)path_utf16.str,
         FindExInfoBasic,
-        &iter->find_data,
+        &iter->data.find_data,
         FindExSearchNameMatch,
         0,
         FIND_FIRST_EX_LARGE_FETCH
@@ -182,13 +182,13 @@ b32 platform_file_iter_next(Arena *arena, FileIter *iter, FileInfo *info)
             continue;
         }
 
-        if (!FindNextFileW(iter->handle, &iter->find_data)) {
+        if (!FindNextFileW(iter->data.handle, &iter->data.find_data)) {
             iter->is_done = true;
         }
 
-        info->name = win32_utf8_from_utf16(arena, string16_from_wcstring(filename));
+        info->name = win32_utf8_from_utf16(arena, string16_from_wcstring(name));
         return true;
-    } while (FindNextFileW(iter->handle, &iter->data.find_data));
+    } while (FindNextFileW(iter->data.handle, &iter->data.find_data));
 
     iter->is_done = true;
     return false;
