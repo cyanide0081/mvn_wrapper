@@ -2,6 +2,7 @@
 #include <fcntl.h> // open
 #include <errno.h> // errno
 #include <string.h> // strerror
+#include <stdlib.h> // getenv, setenv
 #include <dirent.h> // opendir
 #include <limits.h> // PATH_MAX
 #include <sys/stat.h> // stat
@@ -20,8 +21,7 @@ typedef struct {
 typedef struct {
     DIR *dir;
     struct dirent *entry;
-    b32 is_done;
-} FileIter;
+} PlatformFileIter;
 
 #if !defined(MAP_ANONYMOUS)
 #    define MAP_ANONYMOUS MAP_ANON

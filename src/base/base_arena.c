@@ -1,6 +1,6 @@
 Arena arena_init(usize reserve_factor, usize commit)
 {
-    usize page_size = platform_get_page_size();
+    usize page_size = PLATFORM_PAGE_SIZE;
     usize reserved = align_forward_size(reserve_factor * commit, page_size);
     usize committed = align_forward_size(commit, page_size);
     void *memory = platform_mem_reserve(NULL, reserved);

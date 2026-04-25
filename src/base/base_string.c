@@ -1,11 +1,11 @@
 inline String string_from_cstring(const char *str)
 {
-    return string_create(str, cstring_len(str));
+    return string_create(str, str == NULL ? 0 : cstring_len(str));
 }
 
 inline String16 string16_from_wcstring(const u16 *str)
 {
-    return string16_create(str, wcstring_len(str));
+    return string16_create(str, str == NULL ? 0 : wcstring_len(str));
 }
 
 inline char *string_to_cstring(Arena *arena, String s)
@@ -51,7 +51,7 @@ inline String string_keep_number(String s)
 
     usize j = i;
     for (; j < s.len && char_is_digit(s.str[j]); j++) {}
-    
+
     return string_create(&s.str[i], j - i);
 }
 
@@ -124,12 +124,16 @@ b32 string_contains_whitespace(String s)
     return false;
 }
 
-inline String string_trunc(String s, usize len)
+inline String string_join(Arena *arena, String delim, String a, String b)
 {
-    return (String){
-        .len = min(s.len, len),
-        .str = s.str,
-    };
+    usize len = a.len + delim.len + b.len;
+    u8 *buf = arena_push(arena, len + 1);
+
+    mem_copy(buf, a.str, a.len);
+    mem_copy(&buf[a.len], delim.str, delim.len);
+    mem_copy(&buf[a.len + delim.len], b.str, b.len);
+
+    return string_create(buf, len);
 }
 
 inline String string_cut_leading(String s, usize n)
@@ -160,8 +164,7 @@ inline String string_trim_trailing(String s)
 
 inline String string_path_append(Arena *arena, String path, String elem)
 {
-    String separator = string_lit(PLATFORM_PATH_SEPARATOR);
-    return string_fmt(arena, "{}{}{}", path, separator, elem);
+    return string_join(arena, string_lit(PLATFORM_PATH_SEPARATOR), path, elem);
 }
 
 inline String string_path_get_last_element(String path)

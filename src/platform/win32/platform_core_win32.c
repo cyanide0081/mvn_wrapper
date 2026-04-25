@@ -148,15 +148,16 @@ b32 platform_file_exists(Arena *arena, String path)
     return attributes != INVALID_FILE_ATTRIBUTES;
 }
 
-FileIter *platform_file_iter_begin(Arena *arena, String path)
+FileIter *platform_file_iter_begin(Arena *arena, String path, u32 flags)
 {
-    String path_with_wildcard = string_fmt(arena, "{}\\*", path);
+    String path_with_wildcard = string_path_append(arena, path, string_lit("*"));
     String16 path_utf16 = win32_utf16_from_utf8(arena, path_with_wildcard);
     FileIter *iter = arena_push_array(arena, 1, FileIter);
-    iter->handle = FindFirstFileExW(
+    iter->flags = flags;
+    iter->data.handle = FindFirstFileExW(
         (WCHAR*)path_utf16.str,
         FindExInfoBasic,
-        &iter->find_data,
+        &iter->data.find_data,
         FindExSearchNameMatch,
         0,
         FIND_FIRST_EX_LARGE_FETCH
@@ -171,21 +172,23 @@ b32 platform_file_iter_next(Arena *arena, FileIter *iter, FileInfo *info)
     }
 
     do {
-        WCHAR *filename = iter->find_data.cFileName;
-        if (filename[0] == '.') {
+        WCHAR *name = iter->data.find_data.cFileName;
+        DWORD attributes = iter->data.find_data.dwFileAttributes;
+        b32 is_dir = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        b32 skip = ((iter->flags & FILE_ITER_SKIP_DIRS) && is_dir) ||
+            ((iter->flags & FILE_ITER_SKIP_FILES) && !is_dir) ||
+            ((iter->flags & FILE_ITER_SKIP_HIDDEN) && name[0] == '.');
+        if (skip) {
             continue;
         }
 
-        DWORD attributes = iter->find_data.dwFileAttributes;
-        info->name = win32_utf8_from_utf16(arena, string16_from_wcstring(filename));
-        info->is_dir = (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-
-        if (!FindNextFileW(iter->handle, &iter->find_data)) {
+        if (!FindNextFileW(iter->data.handle, &iter->data.find_data)) {
             iter->is_done = true;
         }
 
+        info->name = win32_utf8_from_utf16(arena, string16_from_wcstring(name));
         return true;
-    } while (FindNextFileW(iter->handle, &iter->find_data));
+    } while (FindNextFileW(iter->data.handle, &iter->data.find_data));
 
     iter->is_done = true;
     return false;
@@ -193,7 +196,7 @@ b32 platform_file_iter_next(Arena *arena, FileIter *iter, FileInfo *info)
 
 inline void platform_file_iter_end(FileIter *iter)
 {
-    FindClose(iter->handle);
+    FindClose(iter->data.handle);
 }
 
 inline String platform_file_read_into_string(Arena *arena, File file)
@@ -321,6 +324,8 @@ inline String platform_get_home_directory(Arena *arena)
 // NOTE(cya): windows's wide entry point for unicode strings
 int wmain(int argc, wchar_t *argv[])
 {
+    PLATFORM_PAGE_SIZE = platform_get_page_size();
+
     __platform_std_files[STDIN].handle = GetStdHandle(STD_INPUT_HANDLE);
     __platform_std_files[STDOUT].handle = GetStdHandle(STD_OUTPUT_HANDLE);
     __platform_std_files[STDERR].handle = GetStdHandle(STD_ERROR_HANDLE);
