@@ -21,18 +21,18 @@ typedef struct {
 } StringList;
 
 #define string_is_empty(s) ((s).len == 0)
-#define string_create(s, l) ((String){.len = (usize)(l), .str = (u8*)(s)})
 #define string_lit(s) string_create((s), sizeof(s) - 1)
 #define string_contains_char(s, c) string_contains((s), string_create(&(c), 1))
 #define string_equals(a, b) ((a).len == (b).len && mem_equal((a).str, (b).str, (a).len))
 
+#define string_create(s, l) ((String){.len = (usize)(l), .str = (u8*)(s)})
+#define string_from_cstring(s) (string_create((s), (s) == NULL ? 0 : cstring_len(s)))
+
 #define string16_create(s, l) ((String16){.len = (usize)(l), .str = (u16*)(s)})
+#define string16_from_wcstring(s) (string16_create((s), (s) == NULL ? 0 : wcstring_len(s)))
 
 #define string_list_foreach(l, n) \
     for (StringNode *(n) = (l)->first; (n) != NULL; (n) = (n)->next)
-
-internal String string_from_cstring(const char *str);
-internal String16 string16_from_wcstring(const u16 *str);
 
 internal char *string_to_cstring(Arena *arena, String s);
 

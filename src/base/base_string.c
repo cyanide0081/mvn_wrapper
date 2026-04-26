@@ -1,13 +1,3 @@
-inline String string_from_cstring(const char *str)
-{
-    return string_create(str, str == NULL ? 0 : cstring_len(str));
-}
-
-inline String16 string16_from_wcstring(const u16 *str)
-{
-    return string16_create(str, str == NULL ? 0 : wcstring_len(str));
-}
-
 inline char *string_to_cstring(Arena *arena, String s)
 {
     char *result = arena_push(arena, s.len + 1);
