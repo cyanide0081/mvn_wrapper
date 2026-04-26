@@ -164,7 +164,8 @@ inline String string_trim_trailing(String s)
 
 inline String string_path_append(Arena *arena, String path, String elem)
 {
-    return string_join(arena, string_lit(PLATFORM_PATH_SEPARATOR), path, elem);
+    return string_is_empty(path) ? elem :
+        string_join(arena, string_lit(PLATFORM_PATH_SEPARATOR), path, elem);
 }
 
 inline String string_path_get_last_element(String path)
