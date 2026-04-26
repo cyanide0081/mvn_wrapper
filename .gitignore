@@ -6,5 +6,6 @@
 *.rdi
 mvn
 
-# java directory for testing
-java/**
+# poms for testing
+pom.xml
+java/pom.xml
