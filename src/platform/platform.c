@@ -1,11 +1,13 @@
-// TODO(cya): mac(?)
+// TODO(cya): test mac build
 #if defined(PLATFORM_WINDOWS)
 #    include "win32/platform_core_win32.c"
-#elif defined(PLATFORM_LINUX)
-#    include "linux/platform_core_linux.c"
+#elif defined(PLATFORM_LINUX) || defined(PLATFORM_BSD) || defined(PLATFORM_MAC)
+#    include "posix/platform_core_posix.c"
 #else
 #    error platform layer not implemented for this OS
 #endif
+
+#define platform_path_is_absolute(p) (string_starts_with(p, string_lit(PLATFORM_PATH_SEPARATOR)))
 
 // NOTE(cya): we don't really need more than one for this
 inline Arena platform_init_main_arena(void)

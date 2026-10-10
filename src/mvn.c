@@ -7,9 +7,8 @@
 readonly force_keep char PROGRAM_NAME[] = "mvn wrapper v0.4";
 readonly global char USER_PREFIX[] = "SENIOR";
 readonly global char JDK17_FLAGS[] = "--add-opens java.base/java.lang=ALL-UNNAMED";
-readonly global char *JDK_DIRS[] = {".jdks"};
 readonly global char *POM_DIRS[] = {"", "java"};
-readonly global char *JDK_VENDOR_PATTERNS[] = {"jdk", "temurin", "coretto"};
+readonly global char *JDK_VENDOR_PATTERNS[] = {"jdk-", "temurin-", "coretto-", "openjdk"};
 
 internal inline String string_path_pop_bin(String path)
 {
@@ -80,9 +79,10 @@ void entry_point(Arena *arena, CommandLine *cmd_line)
         log_info("found JDK {} target @ {}", version, pom_file);
 
         // NOTE(cya): prepend dirs from known install locations
-        for (usize i = 0; i < array_len(JDK_DIRS); i++) {
-            String dir = string_from_cstring(JDK_DIRS[i]);
-            String full_dir = string_path_append(arena, home, dir);
+        for (usize i = 0; i < array_len(PLATFORM_JDK_DIRS); i++) {
+            String dir = string_from_cstring(PLATFORM_JDK_DIRS[i]);
+            String full_dir = platform_path_is_absolute(dir) ? dir :
+                string_path_append(arena, home, dir);
             if (platform_file_exists(arena, full_dir)) {
                 FileInfo info;
                 u32 flags = FILE_ITER_SKIP_FILES | FILE_ITER_SKIP_HIDDEN;
@@ -99,8 +99,8 @@ void entry_point(Arena *arena, CommandLine *cmd_line)
         // NOTE(cya): build our vendor-specific install-path patterns
         StringList patterns = {0};
         for (usize i = 0; i < array_len(JDK_VENDOR_PATTERNS); i++) {
-            String vendor = string_from_cstring(JDK_VENDOR_PATTERNS[i]);
-            String pattern = string_join(arena, string_lit("-"), vendor, version);
+            String vendor_prefix = string_from_cstring(JDK_VENDOR_PATTERNS[i]);
+            String pattern = string_join(arena, string_lit(""), vendor_prefix, version);
             string_list_push_back(arena, &patterns, pattern);
         }
 

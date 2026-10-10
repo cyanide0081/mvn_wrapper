@@ -1,8 +1,8 @@
-// TODO(cya): mac(?)
+// TODO(cya): test mac build
 #if defined(PLATFORM_WINDOWS)
 #    include "win32/platform_core_win32.h"
-#elif defined(PLATFORM_LINUX)
-#    include "linux/platform_core_linux.h"
+#elif defined(PLATFORM_LINUX) || defined(PLATFORM_BSD) || defined(PLATFORM_MAC)
+#    include "posix/platform_core_posix.h"
 #else
 #    error platform layer not implemented for this OS
 #endif

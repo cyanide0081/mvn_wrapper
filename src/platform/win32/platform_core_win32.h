@@ -26,6 +26,8 @@ typedef struct {
 
 #define PLATFORM_MVN_FILE string_lit("mvn.cmd")
 
+readonly global char *PLATFORM_JDK_DIRS[] = {".jdks"};
+
 #define platform_mem_equal(a, b, len) RtlEqualMemory(a, b, len)
 #define platform_mem_copy(d, s, len) RtlCopyMemory(d, s, len)
 

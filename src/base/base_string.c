@@ -40,7 +40,13 @@ inline String string_keep_number(String s)
     for (; i < s.len && !char_is_digit(s.str[i]); i++) {}
 
     usize j = i;
-    for (; j < s.len && char_is_digit(s.str[j]); j++) {}
+    b32 consumed_dot = false;
+    for (; j < s.len && char_is_digit(s.str[j]); j++) {
+        if (!consumed_dot && j + 1 < s.len && s.str[j + 1] == '.') {
+            consumed_dot = true;
+            j += 1;
+        }
+    }
 
     return string_create(&s.str[i], j - i);
 }
@@ -233,8 +239,8 @@ StringList string_split(Arena *arena, String s, String delims)
     StringList result = {0};
     u8 *base, *str;
     base = str = s.str;
-    for (usize i = 0; i < s.len; i++) {
-        if (i == s.len - 1 || string_contains_char(delims, str[i])) {
+    for (usize i = 0; i <= s.len; i++) {
+        if (i == s.len || string_contains_char(delims, str[i])) {
             String elem = string_create(base, i - (base - str));
             string_list_push_back(arena, &result, elem);
             base = &str[i + 1];

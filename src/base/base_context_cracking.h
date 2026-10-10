@@ -5,6 +5,8 @@
 #        define PLATFORM_WINDOWS
 #    elif defined(__linux__) || defined(__gnu_linux__)
 #        define PLATFORM_LINUX
+#    elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__DragonFly__)
+#        define PLATFORM_BSD
 #    elif defined(__MACH__) && defined(__APPLE__)
 #        define PLATFORM_MAC
 #    else
